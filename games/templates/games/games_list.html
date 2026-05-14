@@ -1,0 +1,36 @@
+{% extends 'games/base.html' %}
+
+{% block title %}
+Partidas
+{% endblock %}
+
+{% block content %}
+
+<h1>Minhas Partidas</h1>
+
+<p>Aqui ficarão suas partidas salvas para revisão.</p>
+
+{% for game in games %}
+
+<div class="card">
+    <h2>
+    {% if game.title %}
+        {{ game.title }}
+    {% else %}
+        Partida {{ game.id }}
+    {% endif %}
+    </h2>
+    <p>Brancas: {{ game.white_player }}</p>
+    <p>Pretas: {{ game.black_player }}</p>
+    <p>Criada em: {{ game.created_at }}</p>
+
+    <a href="{% url 'game_detail' game.id %}">Revisar partida</a>
+</div>
+
+{% empty %}
+
+<p>Nenhuma partida cadastrada ainda.</p>
+
+{% endfor %}
+
+{% endblock %}

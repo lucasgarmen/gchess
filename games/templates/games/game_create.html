@@ -1,0 +1,19 @@
+{% extends 'games/base.html' %}
+
+{% block title %}
+Nova Partida
+{% endblock %}
+
+{% block content %}
+
+<h1>Nova Partida</h1>
+
+<form method="POST" class="form-card">
+    {% csrf_token %}
+
+    {{ form.as_p }}
+
+    <button type="submit">Salvar partida</button>
+</form>
+
+{% endblock %}

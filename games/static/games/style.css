@@ -1,0 +1,136 @@
+body {
+    background-color: #1e1e1e;
+    color: white;
+    font-family: Arial;
+    padding: 30px;
+}
+
+h1 {
+    color: #f0d9b5;
+}
+
+a {
+    color: #8ab4f8;
+    margin-right: 15px;
+    text-decoration: none;
+}
+
+a:hover {
+    color: white;
+}
+
+.card {
+    background-color: #2b2b2b;
+    padding: 20px;
+    border-radius: 10px;
+    margin-top: 20px;
+    max-width: 400px;
+}
+
+.pgn-box {
+    background-color: #111;
+    padding: 15px;
+    border-radius: 10px;
+    white-space: pre-wrap;
+    max-width: 700px;
+}
+
+.form-card {
+    background-color: #2b2b2b;
+    padding: 20px;
+    border-radius: 10px;
+    max-width: 600px;
+}
+
+input,
+textarea {
+    width: 100%;
+    padding: 10px;
+    margin-top: 5px;
+    margin-bottom: 15px;
+    border-radius: 6px;
+    border: none;
+}
+
+button {
+    background-color: #f0d9b5;
+    color: #111;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.board {
+    display: grid;
+    grid-template-columns: repeat(8, 60px);
+    width: 480px;
+    border: 3px solid #111;
+    margin-top: 20px;
+}
+
+
+.square {
+    width: 60px;
+    height: 60px;
+    font-size: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+
+
+.board-wrapper {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.rank-labels {
+    display: grid;
+    grid-template-rows: repeat(8, 60px);
+    margin-top: 3px;
+}
+
+.rank-labels span,
+.file-labels span {
+    font-size: 12px;
+    color: #ccc;
+}
+
+.rank-labels span {
+    height: 60px;
+    display: flex;
+    align-items: center;
+}
+
+.file-labels {
+    display: grid;
+    grid-template-columns: repeat(8, 60px);
+    margin-top: 4px;
+    text-align: center;
+}
+
+.selected {
+    outline: 3px solid yellow;
+    outline-offset: -3px;
+}
+
+.piece {
+    width: 54px;
+    height: 54px;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+.piece-fallback {
+    color: #111;
+    font-size: 38px;
+    line-height: 1;
+    pointer-events: none;
+}
+.possible-move {
+    box-shadow: inset 0 0 0 5px rgba(0, 255, 0, 0.5);
+}
