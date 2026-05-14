@@ -5,4 +5,4 @@ from .models import ChessGame
 class ChessGameForm(forms.ModelForm):
     class Meta:
         model = ChessGame
-        fields = ['title', 'white_player', 'black_player', 'pgn', 'status', 'result']
+        fields = ['white_player', 'black_player', 'category',]

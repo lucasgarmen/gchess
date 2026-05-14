@@ -1,7 +1,9 @@
+let historyIndex = SAVED_MOVES.length;
 let lastMove = null;
 let currentTurn = 'white';
 let selectedSquare = null;
 let moveNumber = 1;
+let gameOver = false;
 
 let castlingRights = {
     white: {
@@ -19,6 +21,8 @@ let castlingRights = {
 const moveList = document.getElementById('move-list');
 const board = document.getElementById('board');
 const turnIndicator = document.getElementById('turn-indicator');
+const gameStatus = document.getElementById('game-status');
+const pgnBox = document.getElementById('pgn-box');
 
 const initialPosition = {
     a8: { type: 'rook', color: 'black' },
@@ -77,17 +81,82 @@ function sameColor(square1, square2) {
     return squareColor(square1) !== '' && squareColor(square1) === squareColor(square2);
 }
 
+function isKingSquare(square) {
+    return square && square.dataset.type === 'king';
+}
+
 function updateTurnIndicator() {
-    turnIndicator.innerText = currentTurn === 'white'
-        ? 'Vez das brancas'
-        : 'Vez das pretas';
+    if (gameOver && isViewingLatestPosition()) {
+        turnIndicator.innerText = 'Partida finalizada';
+        return;
+    }
+
+    if (isViewingLatestPosition()) {
+        turnIndicator.innerText = currentTurn === 'white'
+            ? 'Vez das brancas'
+            : 'Vez das pretas';
+    } else {
+        turnIndicator.innerText = `Viendo jugada ${historyIndex} de ${SAVED_MOVES.length}`;
+    }
+}
+
+function isViewingLatestPosition() {
+    return historyIndex === SAVED_MOVES.length;
+}
+
+function resetCastlingRights() {
+    castlingRights = {
+        white: {
+            kingMoved: false,
+            leftRookMoved: false,
+            rightRookMoved: false
+        },
+        black: {
+            kingMoved: false,
+            leftRookMoved: false,
+            rightRookMoved: false
+        }
+    };
+}
+
+function updateCastlingRightsAfterMove(move) {
+    const movingType = move.piece_type;
+    const movingColor = move.piece_color;
+    const from = move.from;
+
+    if (movingType === 'king') {
+        castlingRights[movingColor].kingMoved = true;
+    }
+
+    if (movingType === 'rook') {
+        if (from === 'a1') castlingRights.white.leftRookMoved = true;
+        if (from === 'h1') castlingRights.white.rightRookMoved = true;
+        if (from === 'a8') castlingRights.black.leftRookMoved = true;
+        if (from === 'h8') castlingRights.black.rightRookMoved = true;
+    }
+}
+
+function updateHistoryControls() {
+    document.getElementById('prev-move').disabled = historyIndex === 0;
+    document.getElementById('next-move').disabled = historyIndex === SAVED_MOVES.length;
+    document.getElementById('last-move').disabled = isViewingLatestPosition();
+}
+
+function showGameStatus(message) {
+    gameStatus.innerText = message;
+    gameStatus.hidden = false;
+}
+
+function hideGameStatus() {
+    gameStatus.hidden = true;
+    gameStatus.innerText = '';
 }
 
 function selectSquare(square) {
     selectedSquare = square;
     square.classList.add('selected');
 
-    const moves = getPossibleMoves(square);
+    const moves = getLegalMoves(square);
     highlightMoves(moves);
 }
 
@@ -165,6 +234,11 @@ for (let row = 8; row >= 1; row--) {
         }
 
         square.addEventListener('click', function () {
+            if (!isViewingLatestPosition() || gameOver) {
+                clearSelection();
+                return;
+            }
+
             if (selectedSquare === null) {
                 if (squareColor(square) === currentTurn) {
                     selectSquare(square);
@@ -199,12 +273,6 @@ for (let row = 8; row >= 1; row--) {
             const from = selectedSquare.dataset.coord;
             const to = square.dataset.coord;
 
-            const moveItem = document.createElement('li');
-            moveItem.innerText = `${moveNumber}. ${from} -> ${to}`;
-            moveList.appendChild(moveItem);
-
-            moveNumber++;
-
             // comer al paso
             if (
                 movingType === 'pawn' &&
@@ -236,31 +304,39 @@ for (let row = 8; row >= 1; row--) {
             }
 
             movePiece(selectedSquare, square);
-            // marcar rey o torre como movidos
-            if (movingType === 'king') {
-                castlingRights[movingColor].kingMoved = true;
-            }
 
-            if (movingType === 'rook') {
-                if (from === 'a1') castlingRights.white.leftRookMoved = true;
-                if (from === 'h1') castlingRights.white.rightRookMoved = true;
-                if (from === 'a8') castlingRights.black.leftRookMoved = true;
-                if (from === 'h8') castlingRights.black.rightRookMoved = true;
-            }
-            lastMove = {
+            const playedMove = {
+                move_number: moveNumber,
                 from: from,
                 to: to,
-                type: movingType,
-                color: movingColor
+                piece_type: movingType,
+                piece_color: movingColor
             };
+
+            updateCastlingRightsAfterMove(playedMove);
+            lastMove = playedMove;
+
+            SAVED_MOVES.push(playedMove);
+            historyIndex = SAVED_MOVES.length;
+            moveNumber = SAVED_MOVES.length + 1;
+
+            renderSavedMoveList();
+            updateTurnIndicator();
+            updateHistoryControls();
+
+            saveMoveToDatabase(playedMove);
 
             clearSelection();
             switchTurn();
+            checkGameEnd();
         });
 
         board.appendChild(square);
     }
 }
+
+renderSavedMoveList();
+loadPositionUntil(SAVED_MOVES.length);
 
 function coordToPosition(coord) {
     const file = coord[0];
@@ -353,8 +429,8 @@ function getPawnMoves(square) {
         const lastTo = coordToPosition(lastMove.to);
 
         const enemyPawnMovedTwo =
-            lastMove.type === 'pawn' &&
-            lastMove.color !== color &&
+            lastMove.piece_type === 'pawn' &&
+            lastMove.piece_color !== color &&
             Math.abs(lastTo.row - lastFrom.row) === 2;
 
         const enemyPawnIsBeside =
@@ -375,7 +451,7 @@ function highlightMoves(coords) {
     coords.forEach(coord => {
         const square = document.querySelector(`[data-coord="${coord}"]`);
 
-        if (square && !sameColor(selectedSquare, square)) {
+        if (square && !sameColor(selectedSquare, square) && !isKingSquare(square)) {
             square.classList.add('possible-move');
         }
     });
@@ -462,6 +538,126 @@ function getPossibleMoves(square) {
     }
 
     return [];
+}
+
+function getLegalMoves(square) {
+    return getPossibleMoves(square).filter(coord => isLegalMove(square, getSquare(coord)));
+}
+
+function isLegalMove(fromSquare, toSquare) {
+    if (!toSquare || sameColor(fromSquare, toSquare) || isKingSquare(toSquare)) {
+        return false;
+    }
+
+    const movingColor = fromSquare.dataset.color;
+    const boardState = snapshotBoard();
+
+    applyMoveForValidation(fromSquare, toSquare);
+
+    const kingCoord = findKingCoord(movingColor);
+    const isLegal = kingCoord !== null && !isSquareAttacked(kingCoord, getEnemyColor(movingColor));
+
+    restoreBoard(boardState);
+
+    return isLegal;
+}
+
+function snapshotBoard() {
+    return Array.from(document.querySelectorAll('.square')).map(square => ({
+        square: square,
+        color: square.dataset.color,
+        type: square.dataset.type,
+        children: Array.from(square.childNodes),
+    }));
+}
+
+function restoreBoard(boardState) {
+    boardState.forEach(state => {
+        state.square.replaceChildren(...state.children);
+        state.square.dataset.color = state.color;
+        state.square.dataset.type = state.type;
+    });
+}
+
+function applyMoveForValidation(fromSquare, toSquare) {
+    const movingType = fromSquare.dataset.type;
+    const movingColor = fromSquare.dataset.color;
+    const from = fromSquare.dataset.coord;
+    const to = toSquare.dataset.coord;
+
+    if (
+        movingType === 'pawn' &&
+        from[0] !== to[0] &&
+        toSquare.dataset.color === ''
+    ) {
+        const capturedPawnSquare = getSquare(to[0] + from[1]);
+
+        capturedPawnSquare.replaceChildren();
+        capturedPawnSquare.dataset.color = '';
+        capturedPawnSquare.dataset.type = '';
+    }
+
+    if (
+        movingType === 'king' &&
+        Math.abs(getCol(from) - getCol(to)) === 2
+    ) {
+        const row = movingColor === 'white' ? '1' : '8';
+
+        if (to === `g${row}`) {
+            movePiece(getSquare(`h${row}`), getSquare(`f${row}`));
+        }
+
+        if (to === `c${row}`) {
+            movePiece(getSquare(`a${row}`), getSquare(`d${row}`));
+        }
+    }
+
+    movePiece(fromSquare, toSquare);
+}
+
+function findKingCoord(color) {
+    const kingSquare = Array.from(document.querySelectorAll('.square')).find(square => {
+        return square.dataset.type === 'king' && square.dataset.color === color;
+    });
+
+    return kingSquare ? kingSquare.dataset.coord : null;
+}
+
+function isKingInCheck(color) {
+    const kingCoord = findKingCoord(color);
+
+    return kingCoord !== null && isSquareAttacked(kingCoord, getEnemyColor(color));
+}
+
+function hasAnyLegalMove(color) {
+    const pieces = Array.from(document.querySelectorAll('.square')).filter(square => {
+        return square.dataset.color === color;
+    });
+
+    return pieces.some(square => getLegalMoves(square).length > 0);
+}
+
+function isCheckmate(color) {
+    return isKingInCheck(color) && !hasAnyLegalMove(color);
+}
+
+function checkGameEnd() {
+    if (isCheckmate(currentTurn)) {
+        gameOver = true;
+        clearSelection();
+        showGameStatus('xeque-mate!');
+        updateTurnIndicator();
+    }
+}
+
+function refreshGameStatus() {
+    gameOver = isViewingLatestPosition() && isCheckmate(currentTurn);
+
+    if (gameOver) {
+        showGameStatus('xeque-mate!');
+    } else {
+        hideGameStatus();
+    }
 }
 
 function getSlidingMoves(square, directions) {
@@ -680,4 +876,158 @@ function getCastlingMoves(square) {
     }
 
     return moves;
+}
+
+function getCSRFToken() {
+    const cookies = document.cookie.split(';');
+
+    for (let cookie of cookies) {
+        cookie = cookie.trim();
+
+        if (cookie.startsWith('csrftoken=')) {
+            return cookie.substring('csrftoken='.length);
+        }
+    }
+
+    return '';
+}
+
+function saveMoveToDatabase(moveData) {
+    fetch(`/games/${GAME_ID}/save-move/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+        },
+        body: JSON.stringify(moveData),
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Movimento salvo:', data);
+    })
+    .catch(error => {
+        console.error('Erro ao salvar movimento:', error);
+    });
+}
+
+function clearBoard() {
+    document.querySelectorAll('.square').forEach(square => {
+        square.replaceChildren();
+        square.dataset.color = '';
+        square.dataset.type = '';
+    });
+}
+
+function setupInitialPosition() {
+    clearBoard();
+
+    Object.entries(initialPosition).forEach(([coord, position]) => {
+        const square = getSquare(coord);
+
+        square.appendChild(createPieceElement(position));
+        square.dataset.color = position.color;
+        square.dataset.type = position.type;
+    });
+}
+
+function applyMoveWithoutSaving(move) {
+    const fromSquare = getSquare(move.from);
+    const toSquare = getSquare(move.to);
+    const movingType = move.piece_type;
+    const movingColor = move.piece_color;
+
+    if (
+        movingType === 'pawn' &&
+        move.from[0] !== move.to[0] &&
+        toSquare.dataset.color === ''
+    ) {
+        const capturedPawnCoord = move.to[0] + move.from[1];
+        const capturedPawnSquare = getSquare(capturedPawnCoord);
+
+        capturedPawnSquare.replaceChildren();
+        capturedPawnSquare.dataset.color = '';
+        capturedPawnSquare.dataset.type = '';
+    }
+
+    if (
+        movingType === 'king' &&
+        Math.abs(getCol(move.from) - getCol(move.to)) === 2
+    ) {
+        const row = movingColor === 'white' ? '1' : '8';
+
+        if (move.to === `g${row}`) {
+            movePiece(getSquare(`h${row}`), getSquare(`f${row}`));
+        }
+
+        if (move.to === `c${row}`) {
+            movePiece(getSquare(`a${row}`), getSquare(`d${row}`));
+        }
+    }
+
+    movePiece(fromSquare, toSquare);
+    updateCastlingRightsAfterMove(move);
+}
+
+function loadPositionUntil(index) {
+    index = Math.max(0, Math.min(index, SAVED_MOVES.length));
+
+    clearSelection();
+    setupInitialPosition();
+    resetCastlingRights();
+
+    for (let i = 0; i < index; i++) {
+        applyMoveWithoutSaving(SAVED_MOVES[i]);
+    }
+
+    historyIndex = index;
+    moveNumber = SAVED_MOVES.length + 1;
+    currentTurn = index % 2 === 0 ? 'white' : 'black';
+    lastMove = index > 0 ? SAVED_MOVES[index - 1] : null;
+
+    refreshGameStatus();
+    updateTurnIndicator();
+    updateHistoryControls();
+}
+
+function renderSavedMoveList() {
+    moveList.replaceChildren();
+
+    SAVED_MOVES.forEach((move, index) => {
+        const moveItem = document.createElement('li');
+        moveItem.innerText = `${move.move_number}. ${move.from} -> ${move.to}`;
+        moveItem.style.cursor = 'pointer';
+
+        moveItem.addEventListener('click', function () {
+            loadPositionUntil(index + 1);
+        });
+
+        moveList.appendChild(moveItem);
+    });
+
+    updatePgnBox();
+}
+
+document.getElementById('prev-move').addEventListener('click', function () {
+    if (historyIndex > 0) {
+        loadPositionUntil(historyIndex - 1);
+    }
+});
+
+document.getElementById('next-move').addEventListener('click', function () {
+    if (historyIndex < SAVED_MOVES.length) {
+        loadPositionUntil(historyIndex + 1);
+    }
+});
+
+document.getElementById('last-move').addEventListener('click', function () {
+    loadPositionUntil(SAVED_MOVES.length);
+});
+
+
+function updatePgnBox() {
+    const moves = Array.from(moveList.children)
+        .map(item => item.innerText)
+        .join('\n');
+
+    pgnBox.innerText = moves;
 }

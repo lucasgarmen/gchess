@@ -21,52 +21,65 @@
     <p><strong>Criada em:</strong> {{ game.created_at }}</p>
 </div>
 
-
-<h2>Tabuleiro</h2>
-
-<p id="turn-indicator">Vez das brancas</p>
+<main class="game-layout">
+    <section class="board-area">
 
 
-<div class="board-wrapper">
-    <div class="rank-labels">
-        <span>8</span>
-        <span>7</span>
-        <span>6</span>
-        <span>5</span>
-        <span>4</span>
-        <span>3</span>
-        <span>2</span>
-        <span>1</span>
-    </div>
 
-    <div>
-        <div id="board" class="board"></div>
+        <div class="board-wrapper">
+            <div class="rank-labels">
+                <span>8</span>
+                <span>7</span>
+                <span>6</span>
+                <span>5</span>
+                <span>4</span>
+                <span>3</span>
+                <span>2</span>
+                <span>1</span>
+            </div>
 
-        <div class="file-labels">
-            <span>a</span>
-            <span>b</span>
-            <span>c</span>
-            <span>d</span>
-            <span>e</span>
-            <span>f</span>
-            <span>g</span>
-            <span>h</span>
+            <div>
+                <div id="board" class="board"></div>
+
+                <div class="file-labels">
+                    <span>a</span>
+                    <span>b</span>
+                    <span>c</span>
+                    <span>d</span>
+                    <span>e</span>
+                    <span>f</span>
+                    <span>g</span>
+                    <span>h</span>
+                </div>
+            </div>
         </div>
-    </div>
-</div>
+    </section>
 
-<h2>Movimentos</h2>
+    <aside class="pgn-panel">
+        <h2>PGN</h2>
+        <p id="turn-indicator">Vez das brancas</p>
+        <p id="game-status" class="game-status" hidden></p>
 
-<ul id="move-list"></ul>
+        <div class="history-controls">
+            <button id="prev-move">Anterior</button>
+            <button id="next-move">Siguiente</button>
+            <button id="last-move">Última posición</button>
+        </div>
 
-
-<h2>PGN</h2>
-
-<pre class="pgn-box">{{ game.pgn }}</pre>
+        <ul id="move-list" style="display: none;"></ul>
+        <pre id="pgn-box" class="pgn-box"></pre>
+    </aside>
+</main>
 
 <a href="{% url 'games_list' %}">Voltar para partidas</a>
 
-<script src="{% static 'games/board.js' %}?v=4"></script>
+{{ moves|json_script:"saved-moves-data" }}
 
+<script>
+    const GAME_ID = "{{ game.id }}";
+    const SAVED_MOVES = JSON.parse(document.getElementById('saved-moves-data').textContent);
+</script>
+
+<script src="{% static 'games/board.js' %}?v=10"></script>
 
 {% endblock %}

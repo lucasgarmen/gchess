@@ -34,3 +34,15 @@ class ChessGame(models.Model):
 
     def __str__(self):
         return self.title
+    
+class Move(models.Model):
+    game = models.ForeignKey(ChessGame, on_delete=models.CASCADE, related_name='moves')
+    move_number = models.PositiveIntegerField()
+    from_square = models.CharField(max_length=2)
+    to_square = models.CharField(max_length=2)
+    piece_type = models.CharField(max_length=20)
+    piece_color = models.CharField(max_length=10)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.move_number}. {self.from_square} -> {self.to_square}"
