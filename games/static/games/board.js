@@ -893,6 +893,10 @@ function getCSRFToken() {
 }
 
 function saveMoveToDatabase(moveData) {
+    if (typeof ANALYZER_MODE !== 'undefined' && ANALYZER_MODE) {
+        return;
+    }
+
     fetch(`/games/${GAME_ID}/save-move/`, {
         method: 'POST',
         headers: {

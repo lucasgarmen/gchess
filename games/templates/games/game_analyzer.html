@@ -1,0 +1,92 @@
+{% extends 'games/base.html' %}
+{% load static %}
+
+{% block title %}
+Analisar PGN
+{% endblock %}
+
+{% block content %}
+
+<h1>Analisar PGN</h1>
+
+<form method="POST" class="form-card">
+    {% csrf_token %}
+
+    <label for="pgn">Cole o PGN aqui:</label>
+    <textarea name="pgn" id="pgn" rows="8">{{ pgn_text }}</textarea>
+
+    <button type="submit">Analisar partida</button>
+</form>
+
+{% if error_message %}
+    <div class="card">
+        <h2>Error</h2>
+        <p>{{ error_message }}</p>
+    </div>
+{% endif %}
+
+{% if moves %}
+
+{% if opening_name %}
+    <div class="card">
+        <h2>Abertura</h2>
+        <p>{{ opening_name }}</p>
+    </div>
+{% endif %}
+
+<main class="game-layout">
+    <section class="board-area">
+        <div class="board-wrapper">
+            <div class="rank-labels">
+                <span>8</span><span>7</span><span>6</span><span>5</span>
+                <span>4</span><span>3</span><span>2</span><span>1</span>
+            </div>
+
+            <div>
+                <div id="board" class="board"></div>
+
+                <div class="file-labels">
+                    <span>a</span><span>b</span><span>c</span><span>d</span>
+                    <span>e</span><span>f</span><span>g</span><span>h</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <aside class="pgn-panel">
+        <h2>Análise</h2>
+
+        <p id="turn-indicator">Vez das brancas</p>
+        <p id="game-status" class="game-status" hidden></p>
+
+        <div class="history-controls">
+            <button id="prev-move">Anterior</button>
+            <button id="next-move">Siguiente</button>
+            <button id="last-move">Última posição</button>
+        </div>
+
+        <div id="analysis-comment" class="analysis-comment">
+            Posição inicial.
+        </div>
+
+        <ul id="move-list" style="display: none;"></ul>
+        <pre id="pgn-box" class="pgn-box"></pre>
+    </aside>
+</main>
+
+{{ moves|json_script:"saved-moves-data" }}
+{{ analysis|json_script:"analysis-data" }}
+
+<script>
+    const GAME_ID = null;
+    const ANALYZER_MODE = true;
+    const SAVED_MOVES = JSON.parse(document.getElementById('saved-moves-data').textContent);
+    const MOVE_ANALYSIS = JSON.parse(document.getElementById('analysis-data').textContent);
+</script>
+
+<script src="{% static 'games/board.js' %}?v=11"></script>
+<script src="{% static 'games/analyzer.js' %}?v=1"></script>
+
+{% endif %}
+
+{% endblock %}

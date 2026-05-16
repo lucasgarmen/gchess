@@ -211,3 +211,12 @@ button {
         max-height: 320px;
     }
 }
+
+.analysis-comment {
+    background-color: #111;
+    color: #f0d9b5;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    font-weight: bold;
+}
