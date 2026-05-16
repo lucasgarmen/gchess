@@ -553,6 +553,15 @@ function startPieceDrag(square, event) {
         return;
     }
 
+    if (
+        selectedSquare !== null &&
+        selectedSquare !== square &&
+        !sameColor(selectedSquare, square) &&
+        isPossibleMove(square)
+    ) {
+        return;
+    }
+
     event.preventDefault();
 
     cleanupDragState();
@@ -1563,6 +1572,14 @@ function updateTrainerChatControls() {
     }
 }
 
+function trainerChatMoves() {
+    if (typeof ANALYZER_MODE !== 'undefined' && ANALYZER_MODE) {
+        return SAVED_MOVES.slice(0, historyIndex);
+    }
+
+    return SAVED_MOVES;
+}
+
 async function askTrainerChat(question) {
     trainerChatThinking = true;
     updateTrainerChatControls();
@@ -1577,7 +1594,7 @@ async function askTrainerChat(question) {
             },
             body: JSON.stringify({
                 question: question,
-                moves: SAVED_MOVES,
+                moves: trainerChatMoves(),
                 player_color: playerColor(),
             }),
         });

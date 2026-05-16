@@ -27,14 +27,25 @@ Analisar PGN
 
 {% if moves %}
 
-{% if opening_name %}
-    <div class="card">
-        <h2>Abertura</h2>
-        <p>{{ opening_name }}</p>
-    </div>
-{% endif %}
 
-<main class="game-layout">
+
+<main class="game-layout computer-game-layout">
+    <aside class="card computer-panel">
+        <div class="trainer-chat">
+            <h2>Chat do treinador</h2>
+            <div id="trainer-chat-log" class="trainer-chat-log"></div>
+            <form id="trainer-chat-form" class="trainer-chat-form">
+                <input
+                    id="trainer-chat-input"
+                    type="text"
+                    placeholder="Pergunte sobre a posição atual"
+                    autocomplete="off"
+                >
+                <button id="trainer-chat-submit" type="submit">Perguntar</button>
+            </form>
+        </div>
+    </aside>
+
     <section class="board-area">
         <div class="board-wrapper">
             <div class="rank-labels">
@@ -94,8 +105,8 @@ Analisar PGN
     const MOVE_ANALYSIS = JSON.parse(document.getElementById('analysis-data').textContent);
 </script>
 
-<script src="{% static 'games/board.js' %}?v=27"></script>
-<script src="{% static 'games/analyzer.js' %}?v=1"></script>
+<script src="{% static 'games/board.js' %}?v=30"></script>
+<script src="{% static 'games/analyzer.js' %}?v=2"></script>
 
 {% endif %}
 

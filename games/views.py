@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required
 import json
 import chess
 import random
+import re
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from .models import ChessGame, Move
@@ -254,6 +255,26 @@ from pathlib import Path
 
 STOCKFISH_PATH = r"C:\Users\lucas\Downloads\stockfish-windows-x86-64-avx2\stockfish\stockfish-windows-x86-64-avx2.exe"
 ANALYSIS_LIMIT = chess.engine.Limit(time=0.05)
+INTERNAL_MOVE_PATTERN = re.compile(
+    r"^\s*(?:\d+\.\s*)?([a-h][1-8])\s*->\s*([a-h][1-8])"
+    r"(?:\s*(?:=|\()?\s*(queen|rook|bishop|horse|knight|dama|torre|bispo|cavalo|[qrbn])\)?)?\s*$",
+    re.IGNORECASE,
+)
+INTERNAL_PROMOTIONS = {
+    "queen": chess.QUEEN,
+    "dama": chess.QUEEN,
+    "q": chess.QUEEN,
+    "rook": chess.ROOK,
+    "torre": chess.ROOK,
+    "r": chess.ROOK,
+    "bishop": chess.BISHOP,
+    "bispo": chess.BISHOP,
+    "b": chess.BISHOP,
+    "horse": chess.KNIGHT,
+    "knight": chess.KNIGHT,
+    "cavalo": chess.KNIGHT,
+    "n": chess.KNIGHT,
+}
 
 @require_POST
 def engine_move(request):
@@ -533,6 +554,11 @@ def build_trainer_chat_answer(engine, board, san_moves, question, player_color):
     best_ideas = " ".join(describe_coach_ideas(board, best_move))
     evaluation = describe_position_for_player(score, player_color)
 
+    if any(word in question_text for word in ("jogada", "jugada", "lance", "movimiento", "movimento", "última", "ultima", "essa", "esa")):
+        last_move_answer = describe_last_move_for_chat(engine, board, san_moves)
+        if last_move_answer:
+            return last_move_answer
+
     if any(word in question_text for word in ("abertura", "nome", "linha")):
         return (
             f"A abertura parece ser: {opening_name}. "
@@ -565,6 +591,40 @@ def build_trainer_chat_answer(engine, board, san_moves, question, player_color):
         f"Minha leitura rápida: {evaluation} Uma ideia concreta é {best_san}. {best_ideas} "
         f"Olhe primeiro para centro, peças atacadas, peças sem defesa e segurança do rei."
     )
+
+
+def describe_last_move_for_chat(engine, board, san_moves):
+    if not board.move_stack:
+        return "Ainda estamos na posição inicial; não há uma jogada anterior para comentar."
+
+    previous_board = board.copy(stack=True)
+    played_move = previous_board.pop()
+    before = engine.analyse(previous_board, ANALYSIS_LIMIT)
+    before_score = score_to_cp(before["score"].white())
+    best_move = before.get("pv", [played_move])[0]
+    played_san = previous_board.san(played_move)
+    best_san = previous_board.san(best_move)
+    after_score = score_to_cp(engine.analyse(board, ANALYSIS_LIMIT)["score"].white())
+    moving_piece = previous_board.piece_at(played_move.from_square)
+
+    if moving_piece and moving_piece.color == chess.WHITE:
+        loss = before_score - after_score
+    else:
+        loss = after_score - before_score
+
+    loss = max(0, loss)
+    comment = coach_comment(
+        loss,
+        previous_board,
+        played_move,
+        best_move,
+        played_san,
+        best_san,
+        before_score,
+        after_score,
+    )
+
+    return f"Sobre a jogada {len(san_moves)}. {played_san}: {comment}"
 
 
 def describe_position_for_player(score, player_color):
@@ -791,6 +851,57 @@ def describe_move(board, move):
 
     return f"mover o {piece_name} de {from_square} para {to_square}"
 
+
+def read_analyzer_game(pgn_text):
+    game = chess.pgn.read_game(StringIO(pgn_text))
+
+    if game and list(game.mainline_moves()) and not game.errors:
+        return game, None
+
+    internal_game, internal_error = read_internal_coordinate_game(pgn_text)
+    if internal_game:
+        return internal_game, None
+
+    return game, internal_error
+
+
+def read_internal_coordinate_game(pgn_text):
+    board = chess.Board()
+    game = chess.pgn.Game()
+    node = game
+    parsed_moves = 0
+
+    for line_number, line in enumerate(pgn_text.splitlines(), start=1):
+        line = line.strip()
+
+        if not line:
+            continue
+
+        match = INTERNAL_MOVE_PATTERN.match(line)
+        if not match:
+            return None, f"A linha {line_number} não está no formato interno esperado, exemplo: 1. e2 -> e4."
+
+        from_square, to_square, promotion_name = match.groups()
+        promotion = INTERNAL_PROMOTIONS.get(promotion_name.lower()) if promotion_name else None
+        move = chess.Move(
+            chess.parse_square(from_square),
+            chess.parse_square(to_square),
+            promotion=promotion,
+        )
+
+        if move not in board.legal_moves:
+            return None, f"A jogada da linha {line_number} ({from_square} -> {to_square}) é ilegal nessa posição."
+
+        node = node.add_variation(move)
+        board.push(move)
+        parsed_moves += 1
+
+    if parsed_moves == 0:
+        return None, "O PGN não tem jogadas para analisar."
+
+    return game, None
+
+
 def game_analyzer(request):
     moves = []
     analysis = []
@@ -801,12 +912,12 @@ def game_analyzer(request):
     if request.method == "POST":
         pgn_text = request.POST.get("pgn", "").strip()
 
-        game = chess.pgn.read_game(StringIO(pgn_text))
+        game, parse_error = read_analyzer_game(pgn_text) if pgn_text else (None, None)
 
         if not pgn_text:
             error_message = "Cole um PGN antes de analisar a partida."
         elif not game:
-            error_message = "Não consegui ler esse PGN. Confira se ele tem jogadas em formato PGN/SAN."
+            error_message = parse_error or "Não consegui ler esse PGN. Confira se ele tem jogadas em formato PGN/SAN ou no formato da sua partida."
         elif game.errors:
             error_message = "O PGN tem erros de formato ou jogadas ilegais. Corrija e tente novamente."
         elif not list(game.mainline_moves()):

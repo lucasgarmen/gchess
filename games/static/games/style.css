@@ -346,9 +346,9 @@ button {
 }
 
 .piece {
-    width: calc(var(--square-size) * 1.2);
+    width: calc(var(--square-size) * 0.75);
     height: calc(var(--square-size) * 1.2);
-    object-fit: contain;
+    object-fit: fill;
     pointer-events: none;
     user-select: none;
 }
