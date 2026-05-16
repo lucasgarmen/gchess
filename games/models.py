@@ -42,6 +42,7 @@ class Move(models.Model):
     to_square = models.CharField(max_length=2)
     piece_type = models.CharField(max_length=20)
     piece_color = models.CharField(max_length=10)
+    promotion = models.CharField(max_length=20, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

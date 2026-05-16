@@ -15,7 +15,7 @@ function updateAnalysisComment() {
         return;
     }
 
-    analysisComment.innerText = `${data.move_number}. ${data.san} — ${data.comment}`;
+    analysisComment.innerText = `${data.move_number}. ${data.comment}`;
 }
 
 document.getElementById('prev-move').addEventListener('click', updateAnalysisComment);

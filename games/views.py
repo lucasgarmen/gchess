@@ -28,6 +28,7 @@ def game_detail(request, game_id):
             'to': move.to_square,
             'piece_type': move.piece_type,
             'piece_color': move.piece_color,
+            'promotion': move.promotion,
         }
         for move in game.moves.all().order_by('move_number')
     ]
@@ -67,6 +68,7 @@ def save_move(request, game_id):
         to_square=data['to'],
         piece_type=data['piece_type'],
         piece_color=data['piece_color'],
+        promotion=data.get('promotion'),
     )
 
     return JsonResponse({
@@ -127,6 +129,28 @@ def detect_opening(san_moves):
 
     return "Abertura não identificada"
 
+def describe_move(board, move):
+    piece = board.piece_at(move.from_square)
+    if piece is None:
+        return board.san(move)
+
+    piece_name = {
+        chess.PAWN: "peao",
+        chess.KNIGHT: "cavalo",
+        chess.BISHOP: "bispo",
+        chess.ROOK: "torre",
+        chess.QUEEN: "dama",
+        chess.KING: "rei",
+    }[piece.piece_type]
+
+    from_square = chess.square_name(move.from_square)
+    to_square = chess.square_name(move.to_square)
+
+    if board.is_capture(move):
+        return f"capturar em {to_square} com o {piece_name} de {from_square}"
+
+    return f"mover o {piece_name} de {from_square} para {to_square}"
+
 def game_analyzer(request):
     moves = []
     analysis = []
@@ -148,7 +172,7 @@ def game_analyzer(request):
         elif not list(game.mainline_moves()):
             error_message = "El PGN no tiene jugadas para analizar."
         elif not Path(STOCKFISH_PATH).exists():
-            error_message = "No encontre Stockfish en la ruta configurada."
+            error_message = "No encontre el motor de analise en la ruta configurada."
         else:
             engine = None
             board = game.board()
@@ -164,8 +188,9 @@ def game_analyzer(request):
                     before_score = score_to_cp(before["score"].white())
 
                     best_move = before.get("pv", [move])[0]
-                    best_san = board.san(best_move)
                     san = board.san(move)
+                    move_description = describe_move(board, move)
+                    best_description = describe_move(board, best_move)
 
                     san_moves.append(san)
                     opening_name = detect_opening(san_moves)
@@ -212,7 +237,7 @@ def game_analyzer(request):
                     analysis.append({
                         "move_number": move_number,
                         "san": san,
-                        "comment": generate_comment(loss, san, best_san),
+                        "comment": generate_comment(loss, move_description, best_description),
                         "loss": loss,
                     })
 
@@ -237,14 +262,14 @@ def game_analyzer(request):
         "error_message": error_message,
     })
 
-def generate_comment(loss, san, best_san):
+def generate_comment(loss, move_description, best_description):
     if loss < 30:
-        return f"Boa jogada. {san} mantém uma boa posição."
+        return f"Boa jogada. Eu gosto de {move_description}; mantem uma boa posicao."
 
     if loss < 80:
-        return f"Imprecisão. {san} não é ruim, mas {best_san} parecia mais preciso."
+        return f"Imprecisao. Eu talvez nao escolheria {move_description}; minha recomendacao era {best_description}."
 
     if loss < 180:
-        return f"Erro. {san} piora a posição. Stockfish preferia {best_san}."
+        return f"Erro. Eu nao recomendo {move_description}, porque piora a posicao. Minha recomendacao era {best_description}."
 
-    return f"Blunder. {san} perde muita vantagem ou material. Melhor era {best_san}."
+    return f"Blunder. {move_description} perde muita vantagem ou material. Eu jogaria {best_description}."
