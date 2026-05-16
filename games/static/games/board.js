@@ -12,6 +12,11 @@ let computerThinking = false;
 let coachEnabled = false;
 let trainerChatThinking = false;
 let boardOrientation = playerColor();
+let analysisMode = false;
+let analysisBoardState = null;
+let analysisGameState = null;
+let analysisPositions = [];
+let analysisPositionIndex = 0;
 
 let castlingRights = {
     white: {
@@ -117,6 +122,10 @@ function computerColor() {
 }
 
 function canPlayerMoveFrom(square) {
+    if (analysisMode) {
+        return squareColor(square) !== '';
+    }
+
     if (
         !isViewingLatestPosition() ||
         gameOver ||
@@ -130,6 +139,11 @@ function canPlayerMoveFrom(square) {
 }
 
 function updateTurnIndicator() {
+    if (analysisMode) {
+        turnIndicator.innerText = 'Modo análisis: pruebas temporarias';
+        return;
+    }
+
     if (gameOver && isViewingLatestPosition()) {
         turnIndicator.innerText = 'Partida finalizada';
         return;
@@ -196,6 +210,116 @@ function flipBoard() {
     updateBoardOrientation();
 }
 
+function snapshotBoardData() {
+    return Array.from(document.querySelectorAll('.square')).map(square => ({
+        coord: square.dataset.coord,
+        color: square.dataset.color,
+        type: square.dataset.type,
+    }));
+}
+
+function restoreBoardData(boardData) {
+    boardData.forEach(state => {
+        const square = getSquare(state.coord);
+
+        square.replaceChildren();
+        square.dataset.color = state.color;
+        square.dataset.type = state.type;
+
+        if (state.color && state.type) {
+            square.appendChild(createPieceElement({
+                color: state.color,
+                type: state.type,
+            }));
+        }
+    });
+}
+
+function recordAnalysisPosition() {
+    analysisPositions = analysisPositions.slice(0, analysisPositionIndex + 1);
+    analysisPositions.push(snapshotBoardData());
+    analysisPositionIndex = analysisPositions.length - 1;
+    updateHistoryControls();
+}
+
+function showAnalysisPosition(nextIndex) {
+    if (!analysisMode || nextIndex < 0 || nextIndex >= analysisPositions.length) {
+        return;
+    }
+
+    clearSelection();
+    analysisPositionIndex = nextIndex;
+    restoreBoardData(analysisPositions[analysisPositionIndex]);
+    updateCapturedMaterial();
+    updateHistoryControls();
+}
+
+function showPreviousAnalysisPosition() {
+    showAnalysisPosition(analysisPositionIndex - 1);
+}
+
+function showNextAnalysisPosition() {
+    showAnalysisPosition(analysisPositionIndex + 1);
+}
+
+function enterAnalysisMode() {
+    if (computerThinking || promotionPending) {
+        return;
+    }
+
+    clearSelection();
+    analysisBoardState = snapshotBoard();
+    analysisGameState = {
+        currentTurn: currentTurn,
+        lastMove: lastMove,
+        gameOver: gameOver,
+        moveNumber: moveNumber,
+        historyIndex: historyIndex,
+        castlingRights: JSON.parse(JSON.stringify(castlingRights)),
+    };
+    analysisPositions = [snapshotBoardData()];
+    analysisPositionIndex = 0;
+    analysisMode = true;
+    board.classList.add('analysis-board');
+    hideGameStatus();
+    updateTurnIndicator();
+    updateHistoryControls();
+    updateCapturedMaterial();
+}
+
+function exitAnalysisMode() {
+    if (!analysisMode) {
+        return;
+    }
+
+    clearSelection();
+    restoreBoard(analysisBoardState);
+    currentTurn = analysisGameState.currentTurn;
+    lastMove = analysisGameState.lastMove;
+    gameOver = analysisGameState.gameOver;
+    moveNumber = analysisGameState.moveNumber;
+    historyIndex = analysisGameState.historyIndex;
+    castlingRights = analysisGameState.castlingRights;
+    analysisMode = false;
+    analysisBoardState = null;
+    analysisGameState = null;
+    analysisPositions = [];
+    analysisPositionIndex = 0;
+    board.classList.remove('analysis-board');
+    refreshGameStatus();
+    updateTurnIndicator();
+    updateHistoryControls();
+    updateCapturedMaterial();
+}
+
+function toggleAnalysisMode() {
+    if (analysisMode) {
+        exitAnalysisMode();
+    } else {
+        enterAnalysisMode();
+    }
+}
+
 function resetCastlingRights() {
     castlingRights = {
         white: {
@@ -229,18 +353,18 @@ function updateCastlingRightsAfterMove(move) {
 }
 
 function updateHistoryControls() {
-    document.getElementById('prev-move').disabled = historyIndex === 0;
-    document.getElementById('next-move').disabled = historyIndex === SAVED_MOVES.length;
-    document.getElementById('last-move').disabled = isViewingLatestPosition();
+    document.getElementById('prev-move').disabled = analysisMode || historyIndex === 0;
+    document.getElementById('next-move').disabled = analysisMode || historyIndex === SAVED_MOVES.length;
+    document.getElementById('last-move').disabled = analysisMode || isViewingLatestPosition();
 
     const undoComputerButton = document.getElementById('undo-computer-move');
     if (undoComputerButton) {
-        undoComputerButton.disabled = computerThinking || SAVED_MOVES.length === 0;
+        undoComputerButton.disabled = analysisMode || computerThinking || SAVED_MOVES.length === 0;
     }
 
     const resetComputerButton = document.getElementById('reset-computer-game');
     if (resetComputerButton) {
-        resetComputerButton.disabled = computerThinking || SAVED_MOVES.length === 0;
+        resetComputerButton.disabled = analysisMode || computerThinking || SAVED_MOVES.length === 0;
     }
 
     const toggleCoachButton = document.getElementById('toggle-coach');
@@ -250,7 +374,25 @@ function updateHistoryControls() {
 
     const playerColorSelect = document.getElementById('player-color');
     if (playerColorSelect) {
-        playerColorSelect.disabled = computerThinking || SAVED_MOVES.length > 0;
+        playerColorSelect.disabled = analysisMode || computerThinking || SAVED_MOVES.length > 0;
+    }
+
+    const analysisModeButton = document.getElementById('toggle-analysis-mode');
+    if (analysisModeButton) {
+        analysisModeButton.innerText = analysisMode ? 'Salir análisis' : 'Modo análisis';
+        analysisModeButton.classList.toggle('active', analysisMode);
+    }
+
+    const analysisPrevButton = document.getElementById('analysis-prev');
+    if (analysisPrevButton) {
+        analysisPrevButton.hidden = !analysisMode;
+        analysisPrevButton.disabled = analysisPositionIndex === 0;
+    }
+
+    const analysisNextButton = document.getElementById('analysis-next');
+    if (analysisNextButton) {
+        analysisNextButton.hidden = !analysisMode;
+        analysisNextButton.disabled = analysisPositionIndex >= analysisPositions.length - 1;
     }
 }
 
@@ -388,6 +530,57 @@ function movePiece(fromSquare, toSquare) {
     fromSquare.replaceChildren();
     fromSquare.dataset.color = '';
     fromSquare.dataset.type = '';
+}
+
+async function playAnalysisMove(fromSquare, toSquare, shouldAnimate = true) {
+    const movingType = fromSquare.dataset.type;
+    const movingColor = fromSquare.dataset.color;
+    const from = fromSquare.dataset.coord;
+    const to = toSquare.dataset.coord;
+
+    if (shouldAnimate) {
+        await animateMove(fromSquare, toSquare);
+    }
+
+    if (
+        movingType === 'pawn' &&
+        from[0] !== to[0] &&
+        toSquare.dataset.color === ''
+    ) {
+        const capturedPawnSquare = getSquare(to[0] + from[1]);
+
+        if (capturedPawnSquare) {
+            capturedPawnSquare.replaceChildren();
+            capturedPawnSquare.dataset.color = '';
+            capturedPawnSquare.dataset.type = '';
+        }
+    }
+
+    if (
+        movingType === 'king' &&
+        Math.abs(getCol(from) - getCol(to)) === 2
+    ) {
+        const row = movingColor === 'white' ? '1' : '8';
+
+        if (to === `g${row}`) {
+            movePiece(getSquare(`h${row}`), getSquare(`f${row}`));
+        }
+
+        if (to === `c${row}`) {
+            movePiece(getSquare(`a${row}`), getSquare(`d${row}`));
+        }
+    }
+
+    movePiece(fromSquare, toSquare);
+
+    if (isPromotionMove(movingType, movingColor, to)) {
+        const promotedType = await choosePromotionPiece(toSquare, movingColor);
+        promotePawn(toSquare, movingColor, promotedType);
+    }
+
+    clearSelection();
+    recordAnalysisPosition();
+    updateCapturedMaterial();
 }
 
 function isPromotionMove(pieceType, pieceColor, toCoord) {
@@ -695,7 +888,11 @@ async function finishPieceDrag(event) {
         return;
     }
 
-    await playMove(originSquare, targetSquare, false);
+    if (analysisMode) {
+        await playAnalysisMove(originSquare, targetSquare, false);
+    } else {
+        await playMove(originSquare, targetSquare, false);
+    }
 }
 
 function cancelPieceDrag() {
@@ -735,6 +932,7 @@ for (let row = 8; row >= 1; row--) {
         square.dataset.coord = coord;
 
         const isLight = (row + col) % 2 === 0;
+        square.classList.add(isLight ? 'square-light' : 'square-dark');
 
         const position = initialPosition[coord];
 
@@ -768,8 +966,10 @@ for (let row = 8; row >= 1; row--) {
             }
 
             if (!isViewingLatestPosition() || gameOver) {
-                clearSelection();
-                return;
+                if (!analysisMode) {
+                    clearSelection();
+                    return;
+                }
             }
 
             if (selectedSquare === null) {
@@ -800,7 +1000,11 @@ for (let row = 8; row >= 1; row--) {
                 return;
             }
 
-            await playMove(selectedSquare, square);
+            if (analysisMode) {
+                await playAnalysisMove(selectedSquare, square);
+            } else {
+                await playMove(selectedSquare, square);
+            }
         });
 
         board.appendChild(square);
@@ -1015,6 +1219,13 @@ function getPossibleMoves(square) {
 }
 
 function getLegalMoves(square) {
+    if (analysisMode) {
+        return getPossibleMoves(square).filter(coord => {
+            const targetSquare = getSquare(coord);
+            return targetSquare && !sameColor(square, targetSquare) && !isKingSquare(targetSquare);
+        });
+    }
+
     return getPossibleMoves(square).filter(coord => isLegalMove(square, getSquare(coord)));
 }
 
@@ -1116,6 +1327,10 @@ function isCheckmate(color) {
 }
 
 function checkGameEnd() {
+    if (analysisMode) {
+        return false;
+    }
+
     if (isCheckmate(currentTurn)) {
         gameOver = true;
         clearSelection();
@@ -1128,6 +1343,11 @@ function checkGameEnd() {
 }
 
 function refreshGameStatus() {
+    if (analysisMode) {
+        hideGameStatus();
+        return;
+    }
+
     gameOver = isViewingLatestPosition() && isCheckmate(currentTurn);
 
     if (gameOver) {
@@ -1535,7 +1755,7 @@ function enableComputerEloSelect() {
     const playerColorSelect = document.getElementById('player-color');
 
     if (eloSelect) {
-        eloSelect.disabled = SAVED_MOVES.length > 0;
+        eloSelect.disabled = analysisMode || SAVED_MOVES.length > 0;
     }
 
     if (playerColorSelect) {
@@ -1749,6 +1969,21 @@ if (toggleCoachButton) {
 const flipBoardButton = document.getElementById('flip-board');
 if (flipBoardButton) {
     flipBoardButton.addEventListener('click', flipBoard);
+}
+
+const analysisModeButton = document.getElementById('toggle-analysis-mode');
+if (analysisModeButton) {
+    analysisModeButton.addEventListener('click', toggleAnalysisMode);
+}
+
+const analysisPrevButton = document.getElementById('analysis-prev');
+if (analysisPrevButton) {
+    analysisPrevButton.addEventListener('click', showPreviousAnalysisPosition);
+}
+
+const analysisNextButton = document.getElementById('analysis-next');
+if (analysisNextButton) {
+    analysisNextButton.addEventListener('click', showNextAnalysisPosition);
 }
 
 const playerColorSelect = document.getElementById('player-color');

@@ -40,6 +40,9 @@
 
             <div>
                 <div class="board-toolbar">
+                    <button id="analysis-prev" class="icon-button analysis-nav-button" type="button" title="Retroceder análisis" aria-label="Retroceder análisis" hidden>&lt;</button>
+                    <button id="analysis-next" class="icon-button analysis-nav-button" type="button" title="Avanzar análisis" aria-label="Avanzar análisis" hidden>&gt;</button>
+                    <button id="toggle-analysis-mode" class="analysis-mode-button" type="button">Modo análisis</button>
                     <button id="flip-board" class="icon-button" type="button" title="Girar tablero" aria-label="Girar tablero">↻</button>
                 </div>
                 <div id="board" class="board"></div>
@@ -93,6 +96,6 @@
     const SAVED_MOVES = JSON.parse(document.getElementById('saved-moves-data').textContent);
 </script>
 
-<script src="{% static 'games/board.js' %}?v=31"></script>
+<script src="{% static 'games/board.js' %}?v=33"></script>
 
 {% endblock %}

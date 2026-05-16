@@ -302,8 +302,23 @@ button {
 
 .board-toolbar {
     display: flex;
+    gap: 8px;
     justify-content: flex-end;
     margin-bottom: 8px;
+}
+
+.analysis-mode-button {
+    height: 38px;
+    padding: 0 12px;
+}
+
+.analysis-mode-button.active {
+    background-color: #777;
+    color: #fff;
+}
+
+.analysis-nav-button[hidden] {
+    display: none;
 }
 
 .icon-button {
@@ -315,6 +330,14 @@ button {
     line-height: 1;
     padding: 0;
     width: 38px;
+}
+
+.board.analysis-board .square-light {
+    background-color: #d8d8d8 !important;
+}
+
+.board.analysis-board .square-dark {
+    background-color: #8c8c8c !important;
 }
 
 
