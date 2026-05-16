@@ -54,6 +54,9 @@ Analisar PGN
             </div>
 
             <div>
+                <div class="board-toolbar">
+                    <button id="flip-board" class="icon-button" type="button" title="Girar tablero" aria-label="Girar tablero">↻</button>
+                </div>
                 <div id="board" class="board"></div>
 
                 <div class="file-labels">
@@ -105,7 +108,7 @@ Analisar PGN
     const MOVE_ANALYSIS = JSON.parse(document.getElementById('analysis-data').textContent);
 </script>
 
-<script src="{% static 'games/board.js' %}?v=30"></script>
+<script src="{% static 'games/board.js' %}?v=31"></script>
 <script src="{% static 'games/analyzer.js' %}?v=2"></script>
 
 {% endif %}

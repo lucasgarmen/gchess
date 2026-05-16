@@ -11,7 +11,7 @@ Início
 
 <main class="game-layout computer-game-layout">
 <aside class="card computer-panel">
-    <label for="computer-elo">Força do computador:</label>
+    <label for="computer-elo">Elo do Bot:</label>
 
     <select id="computer-elo">
         <option value="500">ELO 500</option>
@@ -21,6 +21,13 @@ Início
         <option value="1600">ELO 1600</option>
         <option value="2000">ELO 2000</option>
         <option value="2500">ELO 2500</option>
+    </select>
+
+    <label for="player-color">Jugar como:</label>
+
+    <select id="player-color">
+        <option value="white" selected>Blancas</option>
+        <option value="black">Negras</option>
     </select>
 
     <div class="computer-controls">
@@ -53,6 +60,9 @@ Início
             </div>
 
             <div>
+                <div class="board-toolbar">
+                    <button id="flip-board" class="icon-button" type="button" title="Girar tablero" aria-label="Girar tablero">↻</button>
+                </div>
                 <div id="board" class="board"></div>
 
                 <div class="file-labels">
@@ -94,9 +104,9 @@ Início
     const GAME_ID = null;
     const SAVED_MOVES = [];
     const COMPUTER_MODE = true;
-    const PLAYER_COLOR = 'white';
+    let PLAYER_COLOR = 'white';
 </script>
 
-<script src="{% static 'games/board.js' %}?v=30"></script>
+<script src="{% static 'games/board.js' %}?v=31"></script>
 
 {% endblock %}
