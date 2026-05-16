@@ -27,6 +27,59 @@ a:hover {
     max-width: 400px;
 }
 
+.game-card {
+    max-width: 340px;
+    padding: 14px 16px;
+    transition: opacity 0.2s ease;
+}
+
+.game-card h2 {
+    font-size: 20px;
+    margin: 0 0 10px;
+}
+
+.game-card p {
+    margin: 6px 0;
+}
+
+.game-card-in-progress {
+    box-shadow: 0 0 18px rgba(240, 217, 181, 0.24);
+}
+
+.game-card-finished {
+    opacity: 0.68;
+}
+
+.game-card-status {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: bold;
+    margin: 0 0 8px;
+    padding: 5px 9px;
+    border-radius: 6px;
+}
+
+.game-card-status-won {
+    background-color: #2f9e44;
+    color: white;
+}
+
+.game-card-status-lost {
+    background-color: #c92a2a;
+    color: white;
+}
+
+.game-card-status-draw {
+    background-color: #f0d95c;
+    color: #111;
+}
+
+.game-card-status-turn,
+.game-card-status-finished {
+    background-color: white;
+    color: #111;
+}
+
 .pgn-box {
     background-color: #111;
     padding: 15px;
@@ -35,6 +88,35 @@ a:hover {
     flex: 1;
     min-height: 0;
     overflow: auto;
+}
+
+.captured-material {
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+}
+
+.captured-row {
+    align-items: center;
+    display: flex;
+    min-height: 28px;
+}
+
+.captured-pieces {
+    align-items: center;
+    display: flex;
+    flex: 1;
+    min-width: 0;
+}
+
+.material-advantage {
+    color: #f0d9b5;
+    font-size: 14px;
+    font-weight: bold;
+    min-width: 28px;
+    text-align: right;
 }
 
 .form-card {
@@ -63,6 +145,97 @@ button {
     cursor: pointer;
 }
 
+.computer-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.computer-panel {
+    align-self: start;
+    box-sizing: border-box;
+    margin-top: 0;
+    width: 220px;
+}
+
+.computer-panel select {
+    box-sizing: border-box;
+    margin-top: 8px;
+    width: 100%;
+}
+
+.computer-panel .computer-controls {
+    flex-direction: column;
+}
+
+.computer-panel .computer-controls button {
+    width: 100%;
+}
+
+.coach-comment {
+    background-color: #111;
+    color: #f0d9b5;
+    font-size: 14px;
+    line-height: 1.35;
+    margin-top: 12px;
+    padding: 10px;
+    border-radius: 6px;
+}
+
+.trainer-chat {
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    margin-top: 14px;
+    padding-top: 12px;
+}
+
+.trainer-chat h2 {
+    color: #f0d9b5;
+    font-size: 17px;
+    margin: 0 0 10px;
+}
+
+.trainer-chat-log {
+    background-color: #111;
+    border-radius: 6px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 180px;
+    min-height: 76px;
+    overflow: auto;
+    padding: 10px;
+}
+
+.trainer-chat-message {
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.trainer-chat-message-user {
+    color: white;
+}
+
+.trainer-chat-message-trainer {
+    color: #f0d9b5;
+}
+
+.trainer-chat-form {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.trainer-chat-form input {
+    box-sizing: border-box;
+    margin: 0;
+}
+
+.trainer-chat-form button {
+    width: 100%;
+}
+
 .game-layout {
     --square-size: clamp(64px, min(10.5vh, 7.4vw), 92px);
     --board-panel-height: calc((var(--square-size) * 8) + 22px);
@@ -74,6 +247,11 @@ button {
     gap: 32px;
     margin: 20px auto 24px;
     max-width: 1180px;
+}
+
+.computer-game-layout {
+    grid-template-columns: 220px max-content minmax(280px, 360px);
+    max-width: 1430px;
 }
 
 .board-area {
@@ -175,6 +353,21 @@ button {
     user-select: none;
 }
 
+.captured-pieces .captured-piece {
+    height: 26px;
+    margin-right: -8px;
+    object-fit: contain;
+    width: 26px;
+}
+
+.captured-white .captured-piece {
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
+}
+
+.captured-black .captured-piece {
+    filter: brightness(0.72) drop-shadow(0 1px 1px rgba(255, 255, 255, 0.18));
+}
+
 .piece-fallback {
     color: #111;
     font-size: calc(var(--square-size) * 0.63);
@@ -264,6 +457,15 @@ button {
 
         grid-template-columns: 1fr;
         justify-items: center;
+    }
+
+    .computer-game-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .computer-panel {
+        max-width: calc((var(--square-size) * 8) + 32px);
+        width: 100%;
     }
 
     .pgn-panel {

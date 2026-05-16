@@ -1,4 +1,5 @@
 {% extends 'games/base.html' %}
+{% load static %}
 
 {% block title %}
 Início
@@ -6,10 +7,96 @@ Início
 
 {% block content %}
 
-<h1>Sistema de Xadrez</h1>
+<h1>Jogar contra o computador</h1>
 
-<p>
-    Revise partidas, estude aberturas e acompanhe sua evolução.
-</p>
+<main class="game-layout computer-game-layout">
+<aside class="card computer-panel">
+    <label for="computer-elo">Força do computador:</label>
+
+    <select id="computer-elo">
+        <option value="500">ELO 500</option>
+        <option value="800">ELO 800</option>
+        <option value="1000">ELO 1000</option>
+        <option value="1320" selected>ELO 1320</option>
+        <option value="1600">ELO 1600</option>
+        <option value="2000">ELO 2000</option>
+        <option value="2500">ELO 2500</option>
+    </select>
+
+    <div class="computer-controls">
+        <button id="toggle-coach" type="button">Habilitar treinador</button>
+        <button id="undo-computer-move" type="button">Voltar jogada</button>
+        <button id="reset-computer-game" type="button">Reiniciar partida</button>
+    </div>
+    <div id="coach-comment" class="coach-comment" hidden></div>
+
+    <div class="trainer-chat">
+        <h2>Chat do treinador</h2>
+        <div id="trainer-chat-log" class="trainer-chat-log"></div>
+        <form id="trainer-chat-form" class="trainer-chat-form">
+            <input
+                id="trainer-chat-input"
+                type="text"
+                placeholder="Pergunte sobre a posição"
+                autocomplete="off"
+            >
+            <button id="trainer-chat-submit" type="submit">Perguntar</button>
+        </form>
+    </div>
+</aside>
+
+    <section class="board-area">
+        <div class="board-wrapper">
+            <div class="rank-labels">
+                <span>8</span><span>7</span><span>6</span><span>5</span>
+                <span>4</span><span>3</span><span>2</span><span>1</span>
+            </div>
+
+            <div>
+                <div id="board" class="board"></div>
+
+                <div class="file-labels">
+                    <span>a</span><span>b</span><span>c</span><span>d</span>
+                    <span>e</span><span>f</span><span>g</span><span>h</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <aside class="pgn-panel">
+        <h2>Partida</h2>
+
+        <p id="turn-indicator">Vez das brancas</p>
+        <p id="game-status" class="game-status" hidden></p>
+
+        <div class="history-controls">
+            <button id="prev-move">Anterior</button>
+            <button id="next-move">Próxima</button>
+            <button id="last-move">Última posição</button>
+        </div>
+
+        <ul id="move-list" style="display: none;"></ul>
+        <pre id="pgn-box" class="pgn-box"></pre>
+        <div id="captured-material" class="captured-material">
+            <div class="captured-row">
+                <div id="captured-black" class="captured-pieces captured-black"></div>
+                <span id="white-material-advantage" class="material-advantage"></span>
+            </div>
+            <div class="captured-row">
+                <div id="captured-white" class="captured-pieces captured-white"></div>
+                <span id="black-material-advantage" class="material-advantage"></span>
+            </div>
+        </div>
+    </aside>
+</main>
+
+<script>
+    const GAME_ID = null;
+    const SAVED_MOVES = [];
+    const COMPUTER_MODE = true;
+    const PLAYER_COLOR = 'white';
+</script>
+
+<script src="{% static 'games/board.js' %}?v=29"></script>
 
 {% endblock %}

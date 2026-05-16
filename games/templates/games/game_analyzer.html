@@ -20,7 +20,7 @@ Analisar PGN
 
 {% if error_message %}
     <div class="card">
-        <h2>Error</h2>
+        <h2>Erro</h2>
         <p>{{ error_message }}</p>
     </div>
 {% endif %}
@@ -61,7 +61,7 @@ Analisar PGN
 
         <div class="history-controls">
             <button id="prev-move">Anterior</button>
-            <button id="next-move">Siguiente</button>
+            <button id="next-move">Próxima</button>
             <button id="last-move">Última posição</button>
         </div>
 
@@ -71,6 +71,16 @@ Analisar PGN
 
         <ul id="move-list" style="display: none;"></ul>
         <pre id="pgn-box" class="pgn-box"></pre>
+        <div id="captured-material" class="captured-material">
+            <div class="captured-row">
+                <div id="captured-black" class="captured-pieces captured-black"></div>
+                <span id="white-material-advantage" class="material-advantage"></span>
+            </div>
+            <div class="captured-row">
+                <div id="captured-white" class="captured-pieces captured-white"></div>
+                <span id="black-material-advantage" class="material-advantage"></span>
+            </div>
+        </div>
     </aside>
 </main>
 
@@ -84,7 +94,7 @@ Analisar PGN
     const MOVE_ANALYSIS = JSON.parse(document.getElementById('analysis-data').textContent);
 </script>
 
-<script src="{% static 'games/board.js' %}?v=16"></script>
+<script src="{% static 'games/board.js' %}?v=27"></script>
 <script src="{% static 'games/analyzer.js' %}?v=1"></script>
 
 {% endif %}

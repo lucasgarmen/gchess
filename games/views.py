@@ -3,20 +3,166 @@ from .models import ChessGame
 from .forms import ChessGameForm
 from django.contrib.auth.decorators import login_required
 import json
+import chess
+import random
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from .models import ChessGame, Move
+
+PROMOTION_PIECES = {
+    'queen': 'q',
+    'rook': 'r',
+    'bishop': 'b',
+    'horse': 'n',
+}
+
+LOW_ELO_SKILL_LEVELS = {
+    500: 0,
+    800: 2,
+    1000: 4,
+}
+
+LOW_ELO_WEAKNESS = {
+    500: {
+        "random_chance": 0.55,
+        "candidate_count": 8,
+        "weights": [8, 7, 6, 5, 4, 3, 2, 1],
+        "time": 0.04,
+    },
+    800: {
+        "random_chance": 0.32,
+        "candidate_count": 6,
+        "weights": [8, 6, 4, 3, 2, 1],
+        "time": 0.06,
+    },
+    1000: {
+        "random_chance": 0.18,
+        "candidate_count": 4,
+        "weights": [8, 5, 3, 1],
+        "time": 0.08,
+    },
+}
 
 def home(request):
     return render(request, 'games/home.html')
 
 
 def games_list(request):
-    games = ChessGame.objects.all().order_by('-created_at')
+    games = ChessGame.objects.all().prefetch_related('moves').order_by('-created_at')
+    game_cards = []
+
+    for game in games:
+        finished_info = get_finished_game_info(game)
+        sync_finished_game_status(game, finished_info)
+
+        game_cards.append({
+            'game': game,
+            'status': build_game_list_status(game, request.user, finished_info),
+            'is_finished': finished_info['finished'],
+            'is_in_progress': not finished_info['finished'],
+        })
 
     return render(request, 'games/games_list.html', {
-        'games': games
+        'game_cards': game_cards
     })
+
+
+def build_game_list_status(game, user, finished_info):
+    if finished_info['finished']:
+        if game.result == 'draw':
+            return {
+                'text': 'Partida empatada',
+                'class': 'game-card-status-draw',
+            }
+
+        user_color = get_user_color_for_game(game, user)
+        winner = finished_info['winner'] or game.result
+
+        if user_color and winner in ('white', 'black'):
+            return {
+                'text': 'Partida vencida' if winner == user_color else 'Partida perdida',
+                'class': 'game-card-status-won' if winner == user_color else 'game-card-status-lost',
+            }
+
+        return {
+            'text': 'Partida finalizada',
+            'class': 'game-card-status-finished',
+        }
+
+    moves_count = game.moves.count()
+    next_turn = 'brancas' if moves_count % 2 == 0 else 'pretas'
+
+    return {
+        'text': f'Vez das {next_turn}',
+        'class': 'game-card-status-turn',
+    }
+
+
+def get_finished_game_info(game):
+    if game.status == 'finished':
+        return {
+            'finished': True,
+            'winner': game.result if game.result in ('white', 'black') else None,
+        }
+
+    board = chess.Board()
+
+    for move in game.moves.all().order_by('move_number', 'id'):
+        try:
+            chess_move = build_chess_move(move)
+        except ValueError:
+            return {'finished': False, 'winner': None}
+
+        if chess_move not in board.legal_moves:
+            return {'finished': False, 'winner': None}
+
+        board.push(chess_move)
+
+    if board.is_checkmate():
+        winner = 'black' if board.turn == chess.WHITE else 'white'
+        return {'finished': True, 'winner': winner}
+
+    return {'finished': False, 'winner': None}
+
+
+def build_chess_move(move):
+    promotion = PROMOTION_PIECES.get(move.promotion or '')
+    return chess.Move.from_uci(f'{move.from_square}{move.to_square}{promotion or ""}')
+
+
+def sync_finished_game_status(game, finished_info):
+    if not finished_info['finished'] or game.status == 'finished':
+        return
+
+    game.status = 'finished'
+
+    if finished_info['winner'] in ('white', 'black'):
+        game.result = finished_info['winner']
+
+    game.save(update_fields=['status', 'result'])
+
+
+def get_user_color_for_game(game, user):
+    if not user.is_authenticated:
+        return None
+
+    user_names = {
+        value.strip().casefold()
+        for value in (
+            user.get_full_name(),
+            user.get_username(),
+            getattr(user, 'email', ''),
+        )
+        if value and value.strip()
+    }
+
+    if game.white_player.strip().casefold() in user_names:
+        return 'white'
+
+    if game.black_player.strip().casefold() in user_names:
+        return 'black'
+
+    return None
 
 def game_detail(request, game_id):
     game = ChessGame.objects.get(id=game_id)
@@ -71,9 +217,34 @@ def save_move(request, game_id):
         promotion=data.get('promotion'),
     )
 
+    if data.get('game_finished'):
+        game.status = 'finished'
+
+        if data.get('winner') in ('white', 'black'):
+            game.result = data['winner']
+
+        game.save(update_fields=['status', 'result'])
+
     return JsonResponse({
         'status': 'ok',
         'move_id': move.id
+    })
+
+
+@require_POST
+def mark_finished(request, game_id):
+    game = ChessGame.objects.get(id=game_id)
+    data = json.loads(request.body)
+
+    game.status = 'finished'
+
+    if data.get('winner') in ('white', 'black'):
+        game.result = data['winner']
+
+    game.save(update_fields=['status', 'result'])
+
+    return JsonResponse({
+        'status': 'ok',
     })
 
 import chess.pgn
@@ -84,10 +255,479 @@ from pathlib import Path
 STOCKFISH_PATH = r"C:\Users\lucas\Downloads\stockfish-windows-x86-64-avx2\stockfish\stockfish-windows-x86-64-avx2.exe"
 ANALYSIS_LIMIT = chess.engine.Limit(time=0.05)
 
+@require_POST
+def engine_move(request):
+    data = json.loads(request.body)
+
+    moves = data.get("moves", [])
+    elo = int(data.get("elo", 1200))
+
+    board = chess.Board()
+
+    for move_data in moves:
+        promotion = PROMOTION_PIECES.get(move_data.get("promotion") or "")
+        uci = f"{move_data['from']}{move_data['to']}{promotion or ''}"
+        move = chess.Move.from_uci(uci)
+
+        if move in board.legal_moves:
+            board.push(move)
+
+    if board.is_game_over():
+        return JsonResponse({
+            "error": "A partida já terminou.",
+        }, status=400)
+
+    if not Path(STOCKFISH_PATH).exists():
+        return JsonResponse({
+            "error": "Não encontrei o Stockfish na rota configurada.",
+        }, status=500)
+
+    engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+
+    try:
+        skill_level = LOW_ELO_SKILL_LEVELS.get(elo)
+
+        if skill_level is not None and "Skill Level" in engine.options:
+            engine.configure({
+                "Skill Level": skill_level,
+            })
+        elif "UCI_LimitStrength" in engine.options and "UCI_Elo" in engine.options:
+            elo_option = engine.options["UCI_Elo"]
+            min_elo = elo_option.min or elo
+            max_elo = elo_option.max or elo
+            supported_elo = max(min_elo, min(max_elo, elo))
+
+            engine.configure({
+                "UCI_LimitStrength": True,
+                "UCI_Elo": supported_elo,
+            })
+
+        move = choose_engine_move(engine, board, elo)
+
+        piece = board.piece_at(move.from_square)
+
+        response = {
+            "from": chess.square_name(move.from_square),
+            "to": chess.square_name(move.to_square),
+            "piece_type": {
+                chess.PAWN: "pawn",
+                chess.KNIGHT: "horse",
+                chess.BISHOP: "bishop",
+                chess.ROOK: "rook",
+                chess.QUEEN: "queen",
+                chess.KING: "king",
+            }[piece.piece_type],
+            "piece_color": "white" if piece.color == chess.WHITE else "black",
+            "promotion": {
+                chess.QUEEN: "queen",
+                chess.ROOK: "rook",
+                chess.BISHOP: "bishop",
+                chess.KNIGHT: "horse",
+            }.get(move.promotion),
+        }
+
+        return JsonResponse(response)
+    except (chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError) as exc:
+        return JsonResponse({
+            "error": f"Não foi possível calcular a jogada: {exc}",
+        }, status=500)
+
+    finally:
+        engine.quit()
+
+
+def choose_engine_move(engine, board, elo):
+    weakness = LOW_ELO_WEAKNESS.get(elo)
+
+    if not weakness:
+        return engine.play(board, chess.engine.Limit(time=0.3)).move
+
+    legal_moves = list(board.legal_moves)
+
+    if random.random() < weakness["random_chance"]:
+        return random.choice(legal_moves)
+
+    candidate_count = min(weakness["candidate_count"], len(legal_moves))
+    analyses = engine.analyse(
+        board,
+        chess.engine.Limit(time=weakness["time"]),
+        multipv=candidate_count,
+    )
+
+    candidates = [
+        analysis["pv"][0]
+        for analysis in analyses
+        if analysis.get("pv")
+    ]
+
+    if not candidates:
+        return random.choice(legal_moves)
+
+    weights = weakness["weights"][:len(candidates)]
+
+    return random.choices(candidates, weights=weights, k=1)[0]
+
+
+@require_POST
+def coach_analysis(request):
+    data = json.loads(request.body)
+    moves = data.get("moves", [])
+    player_color = data.get("player_color", "white")
+
+    if not moves:
+        return JsonResponse({
+            "error": "Não há jogadas para analisar.",
+        }, status=400)
+
+    if not Path(STOCKFISH_PATH).exists():
+        return JsonResponse({
+            "error": "Não encontrei o Stockfish na rota configurada.",
+        }, status=500)
+
+    board = chess.Board()
+
+    try:
+        for move_data in moves[:-1]:
+            move = build_move_from_data(move_data)
+
+            if move not in board.legal_moves:
+                return JsonResponse({
+                    "error": "A partida contém uma jogada ilegal.",
+                }, status=400)
+
+            board.push(move)
+
+        played_move = build_move_from_data(moves[-1])
+
+        if played_move not in board.legal_moves:
+            return JsonResponse({
+                "error": "A última jogada não é legal.",
+            }, status=400)
+    except (KeyError, ValueError):
+        return JsonResponse({
+            "error": "Não consegui ler as jogadas para analisá-las.",
+        }, status=400)
+
+    moving_piece = board.piece_at(played_move.from_square)
+    moving_color = "white" if moving_piece and moving_piece.color == chess.WHITE else "black"
+
+    if moving_color != player_color:
+        return JsonResponse({
+            "comment": "",
+        })
+
+    engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+
+    try:
+        before = engine.analyse(board, ANALYSIS_LIMIT)
+        before_score = score_to_cp(before["score"].white())
+        best_move = before.get("pv", [played_move])[0]
+        played_san = board.san(played_move)
+        best_san = board.san(best_move)
+
+        context_board = board.copy()
+        board.push(played_move)
+
+        after = engine.analyse(board, ANALYSIS_LIMIT)
+        after_score = score_to_cp(after["score"].white())
+
+        loss = before_score - after_score if moving_color == "white" else after_score - before_score
+        loss = max(0, loss)
+
+        return JsonResponse({
+            "comment": coach_comment(
+                loss,
+                context_board,
+                played_move,
+                best_move,
+                played_san,
+                best_san,
+                before_score,
+                after_score,
+            ),
+            "loss": loss,
+            "played": played_san,
+            "best": best_san,
+        })
+    except (chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError) as exc:
+        return JsonResponse({
+            "error": f"Não foi possível analisar a jogada: {exc}",
+        }, status=500)
+    finally:
+        engine.quit()
+
+
+def build_move_from_data(move_data):
+    promotion = PROMOTION_PIECES.get(move_data.get("promotion") or "")
+    return chess.Move.from_uci(f"{move_data['from']}{move_data['to']}{promotion or ''}")
+
+
+def board_from_move_data(moves):
+    board = chess.Board()
+    san_moves = []
+
+    for move_data in moves:
+        move = build_move_from_data(move_data)
+
+        if move not in board.legal_moves:
+            raise ValueError("A partida contém uma jogada ilegal.")
+
+        san_moves.append(board.san(move))
+        board.push(move)
+
+    return board, san_moves
+
+
+@require_POST
+def trainer_chat(request):
+    data = json.loads(request.body)
+    question = data.get("question", "").strip()
+    moves = data.get("moves", [])
+    player_color = data.get("player_color", "white")
+
+    if not question:
+        return JsonResponse({
+            "answer": "Pergunte algo sobre a posição atual.",
+        })
+
+    try:
+        board, san_moves = board_from_move_data(moves)
+    except (KeyError, ValueError):
+        return JsonResponse({
+            "error": "Não consegui ler a posição atual.",
+        }, status=400)
+
+    if not Path(STOCKFISH_PATH).exists():
+        return JsonResponse({
+            "error": "Não encontrei o Stockfish na rota configurada.",
+        }, status=500)
+
+    engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+
+    try:
+        answer = build_trainer_chat_answer(engine, board, san_moves, question, player_color)
+
+        return JsonResponse({
+            "answer": answer,
+        })
+    except (chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError) as exc:
+        return JsonResponse({
+            "error": f"Não foi possível responder agora: {exc}",
+        }, status=500)
+    finally:
+        engine.quit()
+
+
+def build_trainer_chat_answer(engine, board, san_moves, question, player_color):
+    question_text = question.casefold()
+    analysis = engine.analyse(board, chess.engine.Limit(time=0.12))
+    best_move = analysis.get("pv", [None])[0]
+    score = score_to_cp(analysis["score"].white())
+    opening_name = detect_opening(san_moves)
+    player_is_to_move = (board.turn == chess.WHITE and player_color == "white") or (board.turn == chess.BLACK and player_color == "black")
+
+    if best_move is None:
+        return "Não encontrei uma recomendação clara nesta posição."
+
+    best_san = board.san(best_move)
+    best_ideas = " ".join(describe_coach_ideas(board, best_move))
+    evaluation = describe_position_for_player(score, player_color)
+
+    if any(word in question_text for word in ("abertura", "nome", "linha")):
+        return (
+            f"A abertura parece ser: {opening_name}. "
+            f"Pelo plano atual, olhe principalmente para o centro, desenvolvimento das peças e segurança do rei."
+        )
+
+    if any(word in question_text for word in ("recomenda", "recomend", "mover", "jogar", "faço", "fazer", "ajuda")):
+        if player_is_to_move:
+            return (
+                f"Eu consideraria {best_san}. {best_ideas} "
+                f"Antes de mover, confira quais peças suas ficam defendidas e que casas você passa a atacar."
+            )
+
+        return (
+            "Agora é a vez do computador. Enquanto espera, observe a ameaça principal dele: "
+            f"a melhor continuação indicada é {best_san}, então preste atenção nas casas e peças ligadas a essa jogada."
+        )
+
+    if any(word in question_text for word in ("ameaça", "ameaças", "ataca", "ataque", "defendo", "defender")):
+        threats = describe_current_threats(board)
+        return f"{threats} Também olhe se suas peças avançadas estão defendidas por outra peça."
+
+    if any(word in question_text for word in ("melhor", "pior", "vantagem", "avalia", "ganhando", "perdendo")):
+        return (
+            f"{evaluation} A sugestão do motor é {best_san}. "
+            f"O ponto importante é entender se você está ganhando atividade, material ou segurança do rei."
+        )
+
+    return (
+        f"Minha leitura rápida: {evaluation} Uma ideia concreta é {best_san}. {best_ideas} "
+        f"Olhe primeiro para centro, peças atacadas, peças sem defesa e segurança do rei."
+    )
+
+
+def describe_position_for_player(score, player_color):
+    perspective = score if player_color == "white" else -score
+
+    if perspective > 180:
+        return "Você está melhor, com vantagem clara."
+
+    if perspective > 60:
+        return "Você está um pouco melhor."
+
+    if perspective < -180:
+        return "Você está pior e precisa buscar atividade ou simplificar."
+
+    if perspective < -60:
+        return "Você está um pouco pior, então cuide das peças soltas e do rei."
+
+    return "A posição está relativamente equilibrada."
+
+
+def describe_current_threats(board):
+    checks = []
+    captures = []
+
+    for move in board.legal_moves:
+        if board.gives_check(move):
+            checks.append(board.san(move))
+        elif board.is_capture(move):
+            piece = board.piece_at(move.to_square)
+            if piece and piece.piece_type != chess.KING:
+                captures.append(board.san(move))
+
+    if checks:
+        return f"Existem xeques candidatos para quem joga agora: {', '.join(checks[:3])}."
+
+    if captures:
+        return f"As capturas imediatas mais importantes para observar são: {', '.join(captures[:4])}."
+
+    return "Não vejo uma captura ou xeque imediato muito óbvio; a briga principal parece ser por casas e desenvolvimento."
+
+
+def coach_comment(loss, board, played_move, best_move, played_san, best_san, before_score, after_score):
+    played_ideas = describe_coach_ideas(board, played_move)
+    best_ideas = describe_coach_ideas(board, best_move)
+    played_explanation = " ".join(played_ideas)
+    best_explanation = " ".join(best_ideas)
+    evaluation = describe_evaluation_change(board.turn, before_score, after_score)
+
+    if loss < 30:
+        return (
+            f"Boa jogada: {played_san}. {played_explanation} "
+            f"{evaluation} Continue olhando onde suas peças atacam e quais casas importantes elas defendem."
+        )
+
+    if loss < 80:
+        return (
+            f"Imprecisão: {played_san}. {played_explanation} "
+            f"{evaluation} Eu consideraria {best_san}: {best_explanation}"
+        )
+
+    if loss < 180:
+        return (
+            f"Erro: {played_san} piora a posição. {played_explanation} "
+            f"{evaluation} Melhor era {best_san}: {best_explanation}"
+        )
+
+    return (
+        f"Lance muito ruim: {played_san} perde muita força na posição. {played_explanation} "
+        f"{evaluation} A recomendação era {best_san}: {best_explanation}"
+    )
+
+
+def describe_coach_ideas(board, move):
+    piece = board.piece_at(move.from_square)
+
+    if piece is None:
+        return ["A jogada não pôde ser descrita com precisão."]
+
+    ideas = []
+    piece_name = piece_name_pt(piece.piece_type)
+    from_square = chess.square_name(move.from_square)
+    to_square = chess.square_name(move.to_square)
+    target_piece = board.piece_at(move.to_square)
+    is_capture = board.is_capture(move)
+    board_after = board.copy()
+    board_after.push(move)
+
+    if board.gives_check(move):
+        ideas.append("Você cria uma ameaça direta ao rei com xeque.")
+
+    if is_capture:
+        captured_piece = target_piece
+
+        if captured_piece is None and piece.piece_type == chess.PAWN:
+            captured_piece = board.piece_at(chess.square(chess.square_file(move.to_square), chess.square_rank(move.from_square)))
+
+        if captured_piece:
+            ideas.append(f"É uma captura: seu {piece_name} ganha um {piece_name_pt(captured_piece.piece_type)}.")
+        else:
+            ideas.append("É uma captura tática.")
+    elif piece.piece_type in (chess.KNIGHT, chess.BISHOP) and from_square in ("b1", "g1", "b8", "g8", "c1", "f1", "c8", "f8"):
+        ideas.append(f"Você desenvolve o {piece_name}, tirando uma peça da casa inicial.")
+    elif piece.piece_type == chess.PAWN and to_square[0] in ("d", "e"):
+        ideas.append("Você disputa o centro, que é uma boa forma de ganhar espaço.")
+    else:
+        ideas.append(f"Você move o {piece_name} para {to_square}.")
+
+    attacked_by_enemy = board_after.is_attacked_by(not piece.color, move.to_square)
+    defended_by_friend = board_after.is_attacked_by(piece.color, move.to_square)
+
+    if attacked_by_enemy and not defended_by_friend:
+        ideas.append("Atenção: essa peça fica atacada e não parece bem defendida.")
+    elif attacked_by_enemy and defended_by_friend:
+        ideas.append("A peça fica em uma casa disputada: está atacada, mas também defendida.")
+    elif defended_by_friend:
+        ideas.append("A peça fica apoiada pelas suas outras peças.")
+
+    attacked_targets = valuable_attacked_targets(board_after, piece.color, move.to_square)
+
+    if attacked_targets:
+        ideas.append(f"Além disso, ela passa a mirar {', '.join(attacked_targets)}.")
+
+    return ideas
+
+
+def valuable_attacked_targets(board, color, from_square):
+    targets = []
+
+    for square in board.attacks(from_square):
+        piece = board.piece_at(square)
+
+        if piece and piece.color != color and piece.piece_type != chess.KING:
+            targets.append(f"{piece_name_pt(piece.piece_type)} em {chess.square_name(square)}")
+
+    return targets[:2]
+
+
+def describe_evaluation_change(turn, before_score, after_score):
+    change = after_score - before_score if turn == chess.WHITE else before_score - after_score
+
+    if abs(change) < 30:
+        return "A avaliação quase não muda, então a posição continua equilibrada dentro do plano."
+
+    if change > 0:
+        return "A avaliação melhora para você, sinal de que a jogada aumenta sua pressão ou segurança."
+
+    return "A avaliação cai para você, então algo na posição ficou mais vulnerável."
+
+
+def piece_name_pt(piece_type):
+    return {
+        chess.PAWN: "peão",
+        chess.KNIGHT: "cavalo",
+        chess.BISHOP: "bispo",
+        chess.ROOK: "torre",
+        chess.QUEEN: "dama",
+        chess.KING: "rei",
+    }[piece_type]
+
 
 def classify_move(loss):
     if loss is None:
-        return "Jugada analisada."
+        return "Jogada analisada."
 
     if loss < 30:
         return "Boa jogada."
@@ -96,7 +736,7 @@ def classify_move(loss):
     elif loss < 180:
         return "Erro."
     else:
-        return "Blunder."
+        return "Lance muito ruim."
 
 
 def score_to_cp(score):
@@ -135,7 +775,7 @@ def describe_move(board, move):
         return board.san(move)
 
     piece_name = {
-        chess.PAWN: "peao",
+        chess.PAWN: "peão",
         chess.KNIGHT: "cavalo",
         chess.BISHOP: "bispo",
         chess.ROOK: "torre",
@@ -164,15 +804,15 @@ def game_analyzer(request):
         game = chess.pgn.read_game(StringIO(pgn_text))
 
         if not pgn_text:
-            error_message = "Pega un PGN antes de analizar la partida."
+            error_message = "Cole um PGN antes de analisar a partida."
         elif not game:
-            error_message = "No pude leer ese PGN. Revisa que tenga jugadas en formato PGN/SAN."
+            error_message = "Não consegui ler esse PGN. Confira se ele tem jogadas em formato PGN/SAN."
         elif game.errors:
-            error_message = "El PGN tiene errores de formato o jugadas ilegales. Corrigelo e intenta otra vez."
+            error_message = "O PGN tem erros de formato ou jogadas ilegais. Corrija e tente novamente."
         elif not list(game.mainline_moves()):
-            error_message = "El PGN no tiene jugadas para analizar."
+            error_message = "O PGN não tem jogadas para analisar."
         elif not Path(STOCKFISH_PATH).exists():
-            error_message = "No encontre el motor de analise en la ruta configurada."
+            error_message = "Não encontrei o motor de análise na rota configurada."
         else:
             engine = None
             board = game.board()
@@ -200,7 +840,7 @@ def game_analyzer(request):
 
                     piece = board.piece_at(move.from_square)
                     if piece is None:
-                        raise ValueError("La partida contiene una jugada que no se puede reproducir.")
+                        raise ValueError("A partida contém uma jogada que não pode ser reproduzida.")
 
                     piece_type = {
                         chess.PAWN: "pawn",
@@ -246,7 +886,7 @@ def game_analyzer(request):
                 moves = []
                 analysis = []
                 opening_name = ""
-                error_message = f"No se pudo analizar la partida: {exc}"
+                error_message = f"Não foi possível analisar a partida: {exc}"
             finally:
                 if engine:
                     try:
@@ -264,12 +904,12 @@ def game_analyzer(request):
 
 def generate_comment(loss, move_description, best_description):
     if loss < 30:
-        return f"Boa jogada. Eu gosto de {move_description}; mantem uma boa posicao."
+        return f"Boa jogada. Eu gosto de {move_description}; mantém uma boa posição."
 
     if loss < 80:
-        return f"Imprecisao. Eu talvez nao escolheria {move_description}; minha recomendacao era {best_description}."
+        return f"Imprecisão. Eu talvez não escolheria {move_description}; minha recomendação era {best_description}."
 
     if loss < 180:
-        return f"Erro. Eu nao recomendo {move_description}, porque piora a posicao. Minha recomendacao era {best_description}."
+        return f"Erro. Eu não recomendo {move_description}, porque piora a posição. Minha recomendação era {best_description}."
 
-    return f"Blunder. {move_description} perde muita vantagem ou material. Eu jogaria {best_description}."
+    return f"Lance muito ruim. {move_description} perde muita vantagem ou material. Eu jogaria {best_description}."
