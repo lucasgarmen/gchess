@@ -7,7 +7,7 @@
 
     <title>{% block title %}Xadrez{% endblock %}</title>
 
-    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=6">
+    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=8">
 </head>
 
 <body>
@@ -27,6 +27,7 @@
         </form>
     {% else %}
         <a href="{% url 'login' %}">Entrar</a>
+        <a href="{% url 'register' %}">Criar conta</a>
     {% endif %}
     </nav>
 

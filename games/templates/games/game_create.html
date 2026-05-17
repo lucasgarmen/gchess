@@ -8,12 +8,64 @@ Nova Partida
 
 <h1>Nova Partida</h1>
 
-<form method="POST" class="form-card">
+<form method="POST" class="form-card game-create-form" novalidate>
     {% csrf_token %}
 
-    {{ form.as_p }}
+    <div class="form-field">
+        <span class="form-label">Oponente</span>
+        <div class="option-group">
+            {% for option in form.opponent_mode %}
+                <label class="option-item">
+                    {{ option.tag }}
+                    <span>{{ option.choice_label }}</span>
+                </label>
+            {% endfor %}
+        </div>
+        {% for error in form.opponent_mode.errors %}
+            <p class="field-error">{{ error }}</p>
+        {% endfor %}
+    </div>
 
-    <button type="submit">Salvar partida</button>
+    <div class="form-field" id="opponent-name-field">
+        <label for="{{ form.opponent_name.id_for_label }}">Nome do oponente</label>
+        {{ form.opponent_name }}
+        {% for error in form.opponent_name.errors %}
+            <p class="field-error">{{ error }}</p>
+        {% endfor %}
+    </div>
+
+    <div class="form-field">
+        <span class="form-label">Cor das peças</span>
+        <div class="option-group">
+            {% for option in form.color_choice %}
+                <label class="option-item">
+                    {{ option.tag }}
+                    <span>{{ option.choice_label }}</span>
+                </label>
+            {% endfor %}
+        </div>
+        {% for error in form.color_choice.errors %}
+            <p class="field-error">{{ error }}</p>
+        {% endfor %}
+    </div>
+
+    <button type="submit">Criar partida</button>
 </form>
+
+<script>
+    const opponentModeInputs = document.querySelectorAll('input[name="opponent_mode"]');
+    const opponentNameField = document.getElementById('opponent-name-field');
+
+    function updateOpponentNameVisibility() {
+        const selectedMode = document.querySelector('input[name="opponent_mode"]:checked')?.value;
+        opponentNameField.hidden = selectedMode !== 'choose';
+    }
+
+    opponentModeInputs.forEach(function (input) {
+        input.addEventListener('change', updateOpponentNameVisibility);
+    });
+
+    updateOpponentNameVisibility();
+</script>
 
 {% endblock %}

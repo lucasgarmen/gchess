@@ -48,8 +48,12 @@ def home(request):
     return render(request, 'games/home.html')
 
 
+@login_required
 def games_list(request):
-    games = ChessGame.objects.all().prefetch_related('moves').order_by('-created_at')
+    games = ChessGame.objects.filter(
+        owner=request.user
+    ).prefetch_related('moves').order_by('-created_at')
+
     game_cards = []
 
     for game in games:
@@ -165,9 +169,13 @@ def get_user_color_for_game(game, user):
 
     return None
 
+@login_required
 def game_detail(request, game_id):
-    game = ChessGame.objects.get(id=game_id)
-
+    game = get_object_or_404(
+        ChessGame,
+        id=game_id,
+        owner=request.user
+    )
     moves = [
         {
             'move_number': move.move_number,
@@ -191,9 +199,28 @@ def game_create(request):
         form = ChessGameForm(request.POST)
 
         if form.is_valid():
-            game = form.save(commit=False)
-            game.owner = request.user
-            game.save()
+            opponent_name = form.cleaned_data['opponent_name']
+
+            if form.cleaned_data['opponent_mode'] == 'random':
+                opponent_name = 'Oponente aleatório'
+
+            color_choice = form.cleaned_data['color_choice']
+
+            if color_choice == 'random':
+                color_choice = random.choice(['white', 'black'])
+
+            if color_choice == 'white':
+                white_player = request.user.username
+                black_player = opponent_name
+            else:
+                white_player = opponent_name
+                black_player = request.user.username
+
+            ChessGame.objects.create(
+                owner=request.user,
+                white_player=white_player,
+                black_player=black_player,
+            )
             return redirect('games_list')
     else:
         form = ChessGameForm()
@@ -202,10 +229,14 @@ def game_create(request):
         'form': form
     })
     
+@login_required
 @require_POST
 def save_move(request, game_id):
-    game = ChessGame.objects.get(id=game_id)
-
+    game = get_object_or_404(
+        ChessGame,
+        id=game_id,
+        owner=request.user
+    )
     data = json.loads(request.body)
 
     move = Move.objects.create(
@@ -232,9 +263,15 @@ def save_move(request, game_id):
     })
 
 
+@login_required
 @require_POST
 def mark_finished(request, game_id):
-    game = ChessGame.objects.get(id=game_id)
+    game = get_object_or_404(
+        ChessGame,
+        id=game_id,
+        owner=request.user
+    )    
+
     data = json.loads(request.body)
 
     game.status = 'finished'
@@ -1024,3 +1061,4 @@ def generate_comment(loss, move_description, best_description):
         return f"Erro. Eu não recomendo {move_description}, porque piora a posição. Minha recomendação era {best_description}."
 
     return f"Lance muito ruim. {move_description} perde muita vantagem ou material. Eu jogaria {best_description}."
+
