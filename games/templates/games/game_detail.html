@@ -94,8 +94,10 @@
 <script>
     const GAME_ID = "{{ game.id }}";
     const SAVED_MOVES = JSON.parse(document.getElementById('saved-moves-data').textContent);
+    const GAME_PLAYER_COLOR = "{{ player_color|default:'' }}";
+    const MULTIPLAYER_MODE = {{ multiplayer_mode|yesno:"true,false" }};
 </script>
 
-<script src="{% static 'games/board.js' %}?v=33"></script>
+<script src="{% static 'games/board.js' %}?v=37"></script>
 
 {% endblock %}

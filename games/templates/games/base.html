@@ -7,7 +7,7 @@
 
     <title>{% block title %}Xadrez{% endblock %}</title>
 
-    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=8">
+    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=12">
 </head>
 
 <body>
@@ -20,6 +20,13 @@
 
     {% if user.is_authenticated %}
         <span>Olá, {{ user.username }}</span>
+
+        <div class="notification-area">
+            <button id="notification-toggle" type="button">Convites <span id="notification-count" hidden>0</span></button>
+            <div id="notification-panel" class="notification-panel" hidden>
+                <p class="notification-empty">Nenhum convite no momento.</p>
+            </div>
+        </div>
 
         <form method="POST" action="{% url 'logout' %}" style="display: inline;">
             {% csrf_token %}
@@ -35,6 +42,109 @@
 
     {% block content %}
     {% endblock %}
+
+    {% if user.is_authenticated %}
+    <script>
+        const notificationsUrl = "{% url 'game_notifications' %}";
+
+        function getBaseCSRFToken() {
+            const cookies = document.cookie.split(';');
+
+            for (let cookie of cookies) {
+                cookie = cookie.trim();
+
+                if (cookie.startsWith('csrftoken=')) {
+                    return cookie.substring('csrftoken='.length);
+                }
+            }
+
+            return '';
+        }
+
+        const notificationToggle = document.getElementById('notification-toggle');
+        const notificationPanel = document.getElementById('notification-panel');
+        const notificationCount = document.getElementById('notification-count');
+
+        notificationToggle.addEventListener('click', function () {
+            notificationPanel.hidden = !notificationPanel.hidden;
+        });
+
+        async function answerInvitation(invitationId, action) {
+            const response = await fetch(`/convites/${invitationId}/${action}/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': getBaseCSRFToken(),
+                },
+            });
+            const data = await response.json();
+
+            if (action === 'aceitar' && data.game_url) {
+                window.location.href = data.game_url;
+                return;
+            }
+
+            fetchGameNotifications();
+        }
+
+        function renderGameNotifications(invitations) {
+            notificationPanel.replaceChildren();
+            notificationCount.innerText = invitations.length;
+            notificationCount.hidden = invitations.length === 0;
+
+            if (invitations.length === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'notification-empty';
+                empty.innerText = 'Nenhum convite no momento.';
+                notificationPanel.appendChild(empty);
+                return;
+            }
+
+            invitations.forEach(function (invitation) {
+                const item = document.createElement('div');
+                item.className = 'notification-item';
+
+                const text = document.createElement('p');
+                text.innerText = invitation.opponent_mode === 'random'
+                    ? `${invitation.creator} procura um oponente aleatório.`
+                    : `${invitation.creator} convidou você para jogar.`;
+
+                const actions = document.createElement('div');
+                actions.className = 'notification-actions';
+
+                const acceptButton = document.createElement('button');
+                acceptButton.type = 'button';
+                acceptButton.innerText = 'Aceitar';
+                acceptButton.addEventListener('click', function () {
+                    answerInvitation(invitation.id, 'aceitar');
+                });
+
+                const rejectButton = document.createElement('button');
+                rejectButton.type = 'button';
+                rejectButton.innerText = 'Recusar';
+                rejectButton.addEventListener('click', function () {
+                    answerInvitation(invitation.id, 'recusar');
+                });
+
+                actions.append(acceptButton, rejectButton);
+                item.append(text, actions);
+                notificationPanel.appendChild(item);
+            });
+        }
+
+        async function fetchGameNotifications() {
+            try {
+                const response = await fetch(notificationsUrl);
+                const data = await response.json();
+                renderGameNotifications(data.invitations || []);
+            } catch (error) {
+                console.error('Erro ao buscar convites:', error);
+            }
+        }
+
+        fetchGameNotifications();
+        setInterval(fetchGameNotifications, 5000);
+    </script>
+    {% endif %}
 
 </body>
 </html>

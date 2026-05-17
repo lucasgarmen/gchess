@@ -116,7 +116,15 @@ function isComputerMode() {
 }
 
 function playerColor() {
+    if (typeof GAME_PLAYER_COLOR !== 'undefined' && GAME_PLAYER_COLOR) {
+        return GAME_PLAYER_COLOR;
+    }
+
     return typeof PLAYER_COLOR !== 'undefined' ? PLAYER_COLOR : 'white';
+}
+
+function isMultiplayerMode() {
+    return typeof MULTIPLAYER_MODE !== 'undefined' && MULTIPLAYER_MODE;
 }
 
 function computerColor() {
@@ -135,6 +143,10 @@ function canPlayerMoveFrom(square) {
         squareColor(square) !== currentTurn
     ) {
         return false;
+    }
+
+    if (isMultiplayerMode()) {
+        return currentTurn === playerColor();
     }
 
     return !isComputerMode() || currentTurn === playerColor();
@@ -668,13 +680,14 @@ function animateMove(fromSquare, toSquare) {
 
     const fromRect = fromSquare.getBoundingClientRect();
     const toRect = toSquare.getBoundingClientRect();
+    const pieceRect = piece.getBoundingClientRect();
     const movingPiece = piece.cloneNode(true);
 
     movingPiece.classList.add('move-animation-piece');
-    movingPiece.style.left = `${fromRect.left}px`;
-    movingPiece.style.top = `${fromRect.top}px`;
-    movingPiece.style.width = `${fromRect.width}px`;
-    movingPiece.style.height = `${fromRect.height}px`;
+    movingPiece.style.left = `${pieceRect.left}px`;
+    movingPiece.style.top = `${pieceRect.top}px`;
+    movingPiece.style.width = `${pieceRect.width}px`;
+    movingPiece.style.height = `${pieceRect.height}px`;
 
     document.body.appendChild(movingPiece);
     fromSquare.classList.add('drag-origin');
@@ -1017,6 +1030,10 @@ updateBoardOrientation();
 renderSavedMoveList();
 loadPositionUntil(SAVED_MOVES.length);
 updateCapturedMaterial();
+
+if (isMultiplayerMode()) {
+    setInterval(syncMovesFromServer, 2500);
+}
 
 function coordToPosition(coord) {
     const file = coord[0];
@@ -1614,7 +1631,14 @@ function saveMoveToDatabase(moveData, gameState = {}) {
         },
         body: JSON.stringify(payload),
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            syncMovesFromServer();
+            throw new Error('Movimento recusado pelo servidor.');
+        }
+
+        return response.json();
+    })
     .then(data => {
         console.log('Movimento salvo:', data);
     })
@@ -1732,6 +1756,51 @@ function loadPositionUntil(index) {
     updateTurnIndicator();
     updateHistoryControls();
     updateCapturedMaterial();
+}
+
+function movesAreEqual(firstMove, secondMove) {
+    return firstMove &&
+        secondMove &&
+        firstMove.move_number === secondMove.move_number &&
+        firstMove.from === secondMove.from &&
+        firstMove.to === secondMove.to &&
+        firstMove.piece_type === secondMove.piece_type &&
+        firstMove.piece_color === secondMove.piece_color &&
+        (firstMove.promotion || null) === (secondMove.promotion || null);
+}
+
+async function syncMovesFromServer() {
+    if (
+        typeof GAME_ID === 'undefined' ||
+        typeof ANALYZER_MODE !== 'undefined' && ANALYZER_MODE ||
+        isComputerMode() ||
+        promotionPending
+    ) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/games/${GAME_ID}/moves/`);
+
+        if (!response.ok) {
+            return;
+        }
+
+        const data = await response.json();
+        const serverMoves = data.moves || [];
+        const hasDifferentMoves = serverMoves.length !== SAVED_MOVES.length ||
+            serverMoves.some((move, index) => !movesAreEqual(move, SAVED_MOVES[index]));
+
+        if (!hasDifferentMoves) {
+            return;
+        }
+
+        SAVED_MOVES.splice(0, SAVED_MOVES.length, ...serverMoves);
+        renderSavedMoveList();
+        loadPositionUntil(SAVED_MOVES.length);
+    } catch (error) {
+        console.error('Erro ao sincronizar movimentos:', error);
+    }
 }
 
 function renderSavedMoveList() {

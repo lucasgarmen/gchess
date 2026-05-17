@@ -1,5 +1,11 @@
 from django import forms
+from django.contrib.auth.models import User
+from django.utils import timezone
+
 from .models import ChessGame
+
+
+ONLINE_SECONDS = 60
 
 
 class ChessGameForm(forms.Form):
@@ -38,3 +44,15 @@ class ChessGameForm(forms.Form):
             self.add_error('opponent_name', 'Informe o nome do oponente.')
 
         return cleaned_data
+
+    def get_opponent_user(self):
+        if self.cleaned_data.get('opponent_mode') != 'choose':
+            return None
+
+        username = self.cleaned_data.get('opponent_name')
+        online_since = timezone.now() - timezone.timedelta(seconds=ONLINE_SECONDS)
+
+        return User.objects.filter(
+            username__iexact=username,
+            presence__last_seen__gte=online_since,
+        ).first()

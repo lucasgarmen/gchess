@@ -23,6 +23,8 @@ class ChessGame(models.Model):
 
 
     owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    white_user = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, related_name='white_games')
+    black_user = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, related_name='black_games')
     title = models.CharField(max_length=100, blank=True)
     white_player = models.CharField(max_length=100)
     black_player = models.CharField(max_length=100)
@@ -47,3 +49,43 @@ class Move(models.Model):
 
     def __str__(self):
         return f"{self.move_number}. {self.from_square} -> {self.to_square}"
+
+
+class UserPresence(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='presence')
+    last_seen = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} online"
+
+
+class GameInvitation(models.Model):
+    OPPONENT_CHOICES = [
+        ('direct', 'Oponente escolhido'),
+        ('random', 'Oponente aleatório'),
+    ]
+
+    COLOR_CHOICES = [
+        ('white', 'Brancas'),
+        ('black', 'Pretas'),
+        ('random', 'Aleatório'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', 'Pendente'),
+        ('accepted', 'Aceita'),
+        ('rejected', 'Recusada'),
+        ('cancelled', 'Cancelada'),
+    ]
+
+    creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_game_invitations')
+    opponent = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True, related_name='received_game_invitations')
+    opponent_mode = models.CharField(max_length=20, choices=OPPONENT_CHOICES)
+    creator_color = models.CharField(max_length=20, choices=COLOR_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    game = models.ForeignKey(ChessGame, on_delete=models.SET_NULL, blank=True, null=True, related_name='invitations')
+    created_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Convite de {self.creator.username}"

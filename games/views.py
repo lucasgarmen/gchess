@@ -1,4 +1,8 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib.auth.models import User
+from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 from .models import ChessGame
 from .forms import ChessGameForm
 from django.contrib.auth.decorators import login_required
@@ -8,7 +12,7 @@ import random
 import re
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
-from .models import ChessGame, Move
+from .models import ChessGame, GameInvitation, Move, UserPresence
 
 PROMOTION_PIECES = {
     'queen': 'q',
@@ -16,6 +20,65 @@ PROMOTION_PIECES = {
     'bishop': 'b',
     'horse': 'n',
 }
+
+ONLINE_SECONDS = 60
+
+
+def online_since():
+    return timezone.now() - timezone.timedelta(seconds=ONLINE_SECONDS)
+
+
+def touch_presence(user):
+    if user.is_authenticated:
+        UserPresence.objects.update_or_create(user=user)
+
+
+def game_access_filter(user):
+    return Q(owner=user) | Q(white_user=user) | Q(black_user=user)
+
+
+def get_game_for_user(game_id, user):
+    return get_object_or_404(
+        ChessGame,
+        game_access_filter(user),
+        id=game_id,
+    )
+
+
+def player_color_for_game(game, user):
+    if game.white_user_id == user.id:
+        return 'white'
+
+    if game.black_user_id == user.id:
+        return 'black'
+
+    return None
+
+
+def resolve_creator_color(color_choice):
+    if color_choice == 'random':
+        return random.choice(['white', 'black'])
+
+    return color_choice
+
+
+def create_game_from_invitation(invitation, opponent):
+    creator_color = resolve_creator_color(invitation.creator_color)
+
+    if creator_color == 'white':
+        white_user = invitation.creator
+        black_user = opponent
+    else:
+        white_user = opponent
+        black_user = invitation.creator
+
+    return ChessGame.objects.create(
+        owner=invitation.creator,
+        white_user=white_user,
+        black_user=black_user,
+        white_player=white_user.username,
+        black_player=black_user.username,
+    )
 
 LOW_ELO_SKILL_LEVELS = {
     500: 0,
@@ -45,13 +108,15 @@ LOW_ELO_WEAKNESS = {
 }
 
 def home(request):
+    touch_presence(request.user)
     return render(request, 'games/home.html')
 
 
 @login_required
 def games_list(request):
+    touch_presence(request.user)
     games = ChessGame.objects.filter(
-        owner=request.user
+        game_access_filter(request.user)
     ).prefetch_related('moves').order_by('-created_at')
 
     game_cards = []
@@ -171,11 +236,9 @@ def get_user_color_for_game(game, user):
 
 @login_required
 def game_detail(request, game_id):
-    game = get_object_or_404(
-        ChessGame,
-        id=game_id,
-        owner=request.user
-    )
+    touch_presence(request.user)
+    game = get_game_for_user(game_id, request.user)
+    player_color = player_color_for_game(game, request.user)
     moves = [
         {
             'move_number': move.move_number,
@@ -191,37 +254,40 @@ def game_detail(request, game_id):
     return render(request, 'games/game_detail.html', {
         'game': game,
         'moves': moves,
+        'player_color': player_color,
+        'multiplayer_mode': bool(game.white_user_id and game.black_user_id),
     })
 
 @login_required   
 def game_create(request):
+    touch_presence(request.user)
     if request.method == 'POST':
         form = ChessGameForm(request.POST)
 
         if form.is_valid():
-            opponent_name = form.cleaned_data['opponent_name']
+            opponent_mode = form.cleaned_data['opponent_mode']
+            opponent = form.get_opponent_user()
 
-            if form.cleaned_data['opponent_mode'] == 'random':
-                opponent_name = 'Oponente aleatório'
-
-            color_choice = form.cleaned_data['color_choice']
-
-            if color_choice == 'random':
-                color_choice = random.choice(['white', 'black'])
-
-            if color_choice == 'white':
-                white_player = request.user.username
-                black_player = opponent_name
+            if opponent_mode == 'choose':
+                if not opponent:
+                    form.add_error('opponent_name', 'Esse usuário não está online ou não existe.')
+                elif opponent == request.user:
+                    form.add_error('opponent_name', 'Você não pode jogar contra você mesmo.')
+                else:
+                    invitation = GameInvitation.objects.create(
+                        creator=request.user,
+                        opponent=opponent,
+                        opponent_mode='direct',
+                        creator_color=form.cleaned_data['color_choice'],
+                    )
+                    return redirect('game_invitation_wait', invitation_id=invitation.id)
             else:
-                white_player = opponent_name
-                black_player = request.user.username
-
-            ChessGame.objects.create(
-                owner=request.user,
-                white_player=white_player,
-                black_player=black_player,
-            )
-            return redirect('games_list')
+                invitation = GameInvitation.objects.create(
+                    creator=request.user,
+                    opponent_mode='random',
+                    creator_color=form.cleaned_data['color_choice'],
+                )
+                return redirect('game_invitation_wait', invitation_id=invitation.id)
     else:
         form = ChessGameForm()
 
@@ -232,12 +298,17 @@ def game_create(request):
 @login_required
 @require_POST
 def save_move(request, game_id):
-    game = get_object_or_404(
-        ChessGame,
-        id=game_id,
-        owner=request.user
-    )
+    touch_presence(request.user)
+    game = get_game_for_user(game_id, request.user)
     data = json.loads(request.body)
+    player_color = player_color_for_game(game, request.user)
+    expected_color = 'white' if game.moves.count() % 2 == 0 else 'black'
+
+    if player_color and data.get('piece_color') != player_color:
+        return JsonResponse({'error': 'Você só pode mover suas próprias peças.'}, status=403)
+
+    if data.get('piece_color') != expected_color:
+        return JsonResponse({'error': 'Não é a vez dessa cor.'}, status=400)
 
     move = Move.objects.create(
         game=game,
@@ -266,11 +337,8 @@ def save_move(request, game_id):
 @login_required
 @require_POST
 def mark_finished(request, game_id):
-    game = get_object_or_404(
-        ChessGame,
-        id=game_id,
-        owner=request.user
-    )    
+    touch_presence(request.user)
+    game = get_game_for_user(game_id, request.user)
 
     data = json.loads(request.body)
 
@@ -284,6 +352,162 @@ def mark_finished(request, game_id):
     return JsonResponse({
         'status': 'ok',
     })
+
+
+@login_required
+def game_invitation_wait(request, invitation_id):
+    touch_presence(request.user)
+    invitation = get_object_or_404(GameInvitation, id=invitation_id, creator=request.user)
+
+    return render(request, 'games/game_invitation_wait.html', {
+        'invitation': invitation,
+    })
+
+
+@login_required
+def invitation_status(request, invitation_id):
+    touch_presence(request.user)
+    invitation = get_object_or_404(GameInvitation, id=invitation_id, creator=request.user)
+
+    return JsonResponse({
+        'status': invitation.status,
+        'game_id': invitation.game_id,
+        'game_url': f'/partidas/{invitation.game_id}/' if invitation.game_id else None,
+    })
+
+
+@login_required
+@require_POST
+def cancel_invitation(request, invitation_id):
+    touch_presence(request.user)
+    invitation = get_object_or_404(GameInvitation, id=invitation_id, creator=request.user)
+
+    updated_count = GameInvitation.objects.filter(
+        id=invitation.id,
+        status='pending',
+    ).update(
+        status='cancelled',
+        responded_at=timezone.now(),
+    )
+
+    if updated_count == 0:
+        return JsonResponse({'error': 'Esse convite não pode mais ser cancelado.'}, status=409)
+
+    return JsonResponse({
+        'status': 'cancelled',
+        'redirect_url': '/partidas/',
+    })
+
+
+@login_required
+def game_notifications(request):
+    touch_presence(request.user)
+    invitations = GameInvitation.objects.filter(
+        status='pending',
+    ).filter(
+        Q(opponent=request.user) |
+        Q(opponent_mode='random', opponent__isnull=True)
+    ).exclude(
+        creator=request.user
+    ).select_related('creator').order_by('created_at')[:8]
+
+    return JsonResponse({
+        'invitations': [
+            {
+                'id': invitation.id,
+                'creator': invitation.creator.username,
+                'opponent_mode': invitation.opponent_mode,
+                'creator_color': invitation.creator_color,
+            }
+            for invitation in invitations
+        ]
+    })
+
+
+@login_required
+@require_POST
+def accept_invitation(request, invitation_id):
+    touch_presence(request.user)
+
+    with transaction.atomic():
+        invitation = get_object_or_404(GameInvitation, id=invitation_id)
+
+        if invitation.creator_id == request.user.id:
+            return JsonResponse({'error': 'Você não pode aceitar seu próprio convite.'}, status=403)
+
+        if invitation.status != 'pending':
+            return JsonResponse({'error': 'Esse convite não está mais disponível.'}, status=409)
+
+        if invitation.opponent_id and invitation.opponent_id != request.user.id:
+            return JsonResponse({'error': 'Esse convite é para outro jogador.'}, status=403)
+
+        accepted_count = GameInvitation.objects.filter(
+            id=invitation_id,
+            status='pending',
+        ).filter(
+            Q(opponent=request.user) |
+            Q(opponent_mode='random', opponent__isnull=True)
+        ).exclude(
+            creator=request.user
+        ).update(
+            opponent=request.user,
+            status='accepted',
+            responded_at=timezone.now(),
+        )
+
+        if accepted_count == 0:
+            return JsonResponse({'error': 'Esse convite não está mais disponível.'}, status=409)
+
+        invitation = GameInvitation.objects.select_related('creator', 'opponent').get(id=invitation_id)
+        game = create_game_from_invitation(invitation, request.user)
+        invitation.game = game
+        invitation.save(update_fields=['game'])
+
+    return JsonResponse({
+        'status': 'accepted',
+        'game_id': game.id,
+        'game_url': f'/partidas/{game.id}/',
+    })
+
+
+@login_required
+@require_POST
+def reject_invitation(request, invitation_id):
+    touch_presence(request.user)
+    invitation = get_object_or_404(GameInvitation, id=invitation_id, status='pending')
+
+    if invitation.opponent_id and invitation.opponent_id != request.user.id:
+        return JsonResponse({'error': 'Esse convite é para outro jogador.'}, status=403)
+
+    if invitation.creator_id == request.user.id:
+        return JsonResponse({'error': 'Você não pode recusar seu próprio convite.'}, status=403)
+
+    if invitation.opponent_mode == 'direct':
+        invitation.status = 'rejected'
+        invitation.responded_at = timezone.now()
+        invitation.save(update_fields=['status', 'responded_at'])
+
+    return JsonResponse({'status': 'rejected'})
+
+
+@login_required
+def game_moves(request, game_id):
+    touch_presence(request.user)
+    game = get_game_for_user(game_id, request.user)
+
+    moves = [
+        {
+            'move_number': move.move_number,
+            'from': move.from_square,
+            'to': move.to_square,
+            'piece_type': move.piece_type,
+            'piece_color': move.piece_color,
+            'promotion': move.promotion,
+        }
+        for move in game.moves.all().order_by('move_number')
+    ]
+
+    return JsonResponse({'moves': moves})
 
 import chess.pgn
 import chess.engine

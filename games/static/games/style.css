@@ -19,6 +19,62 @@ a:hover {
     color: white;
 }
 
+.notification-area {
+    display: inline-block;
+    margin-right: 12px;
+    position: relative;
+}
+
+#notification-count {
+    background-color: #c92a2a;
+    border-radius: 999px;
+    color: white;
+    display: inline-block;
+    font-size: 12px;
+    margin-left: 4px;
+    min-width: 18px;
+    padding: 2px 5px;
+}
+
+.notification-panel {
+    background-color: #2b2b2b;
+    border: 1px solid rgba(240, 217, 181, 0.28);
+    border-radius: 8px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+    color: white;
+    min-width: 280px;
+    padding: 12px;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    z-index: 100;
+}
+
+.notification-empty,
+.notification-item p {
+    margin: 0;
+}
+
+.notification-item {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 10px 0;
+}
+
+.notification-item:first-child {
+    padding-top: 0;
+}
+
+.notification-item:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+.notification-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
 .card {
     background-color: #2b2b2b;
     padding: 20px;
@@ -222,6 +278,24 @@ a:hover {
 .password-toggle input {
     margin: 0;
     width: auto;
+}
+
+.waiting-page {
+    display: flex;
+    justify-content: center;
+    padding-top: 40px;
+}
+
+.waiting-card {
+    max-width: 460px;
+}
+
+.loading-line {
+    background: linear-gradient(90deg, transparent, #f0d9b5, transparent);
+    border-radius: 999px;
+    height: 4px;
+    margin: 20px 0;
+    overflow: hidden;
 }
 
 input,
@@ -526,10 +600,17 @@ button {
 
 .drag-piece,
 .move-animation-piece {
-    object-fit: contain;
     pointer-events: none;
     position: fixed;
     z-index: 50;
+}
+
+.drag-piece {
+    object-fit: contain;
+}
+
+.move-animation-piece {
+    object-fit: fill;
 }
 
 .drag-piece {

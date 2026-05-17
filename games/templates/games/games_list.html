@@ -26,7 +26,13 @@ Partidas
     <p>Pretas: {{ game.black_player }}</p>
     <p>Criada em: {{ game.created_at }}</p>
 
-    <a href="{% url 'game_detail' game.id %}">Revisar partida</a>
+    <a href="{% url 'game_detail' game.id %}">
+        {% if card.is_finished %}
+            Revisão da partida
+        {% else %}
+            Continuar partida
+        {% endif %}
+    </a>
 </div>
 {% endwith %}
 

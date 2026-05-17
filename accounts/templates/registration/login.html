@@ -6,13 +6,55 @@ Entrar
 
 {% block content %}
 
-<h1>Entrar</h1>
+<main class="auth-page">
+    <form method="POST" class="form-card auth-card" novalidate>
+        {% csrf_token %}
 
-<form method="POST" class="form-card">
-    {% csrf_token %}
-    {{ form.as_p }}
+        <h1>Entrar</h1>
 
-    <button type="submit">Entrar</button>
-</form>
+        {% if form.non_field_errors %}
+            <div class="form-errors">
+                {{ form.non_field_errors }}
+            </div>
+        {% endif %}
+
+        <div class="form-field">
+            <label for="{{ form.username.id_for_label }}">Usuário</label>
+            {{ form.username }}
+            {% for error in form.username.errors %}
+                <p class="field-error">{{ error }}</p>
+            {% endfor %}
+        </div>
+
+        <div class="form-field">
+            <label for="{{ form.password.id_for_label }}">Senha</label>
+            {{ form.password }}
+            {% for error in form.password.errors %}
+                <p class="field-error">{{ error }}</p>
+            {% endfor %}
+        </div>
+
+        <label class="password-toggle">
+            <input type="checkbox" id="show-login-password">
+            Mostrar senha
+        </label>
+
+        <button type="submit">Entrar</button>
+
+        <p class="auth-switch">
+            Ainda não tem conta?
+            <a href="{% url 'register' %}">Criar conta</a>
+        </p>
+    </form>
+</main>
+
+<script>
+    const showLoginPassword = document.getElementById('show-login-password');
+    const loginPasswordField = document.getElementById('{{ form.password.id_for_label }}');
+
+    showLoginPassword.addEventListener('change', function () {
+        loginPasswordField.type = showLoginPassword.checked ? 'text' : 'password';
+    });
+</script>
 
 {% endblock %}

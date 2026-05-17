@@ -1,0 +1,92 @@
+{% extends 'games/base.html' %}
+
+{% block title %}
+Aguardando oponente
+{% endblock %}
+
+{% block content %}
+
+<main class="waiting-page">
+    <section class="form-card waiting-card">
+        <h1>Aguardando oponente</h1>
+
+        {% if invitation.opponent_mode == 'random' %}
+            <p>Procurando um jogador aleatório online...</p>
+        {% else %}
+            <p>Convite enviado para {{ invitation.opponent.username }}.</p>
+        {% endif %}
+
+        <div class="loading-line"></div>
+        <p id="invitation-wait-status" class="field-help">Assim que alguém aceitar, a partida vai abrir automaticamente.</p>
+        <button id="cancel-invitation" type="button">Cancelar solicitação</button>
+    </section>
+</main>
+
+<script>
+    const invitationStatusUrl = "{% url 'invitation_status' invitation.id %}";
+    const cancelInvitationUrl = "{% url 'cancel_invitation' invitation.id %}";
+    const waitStatus = document.getElementById('invitation-wait-status');
+    const cancelInvitationButton = document.getElementById('cancel-invitation');
+
+    function getWaitCSRFToken() {
+        const cookies = document.cookie.split(';');
+
+        for (let cookie of cookies) {
+            cookie = cookie.trim();
+
+            if (cookie.startsWith('csrftoken=')) {
+                return cookie.substring('csrftoken='.length);
+            }
+        }
+
+        return '';
+    }
+
+    async function checkInvitationStatus() {
+        const response = await fetch(invitationStatusUrl);
+        const data = await response.json();
+
+        if (data.status === 'accepted' && data.game_url) {
+            window.location.href = data.game_url;
+            return;
+        }
+
+        if (data.status === 'rejected') {
+            waitStatus.innerText = 'O convite foi recusado.';
+            cancelInvitationButton.disabled = true;
+            return;
+        }
+
+        if (data.status === 'cancelled') {
+            waitStatus.innerText = 'Solicitação cancelada.';
+            cancelInvitationButton.disabled = true;
+            return;
+        }
+
+        setTimeout(checkInvitationStatus, 2500);
+    }
+
+    cancelInvitationButton.addEventListener('click', async function () {
+        cancelInvitationButton.disabled = true;
+        waitStatus.innerText = 'Cancelando solicitação...';
+
+        const response = await fetch(cancelInvitationUrl, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getWaitCSRFToken(),
+            },
+        });
+        const data = await response.json();
+
+        if (response.ok && data.redirect_url) {
+            window.location.href = data.redirect_url;
+            return;
+        }
+
+        waitStatus.innerText = data.error || 'Não foi possível cancelar a solicitação.';
+    });
+
+    checkInvitationStatus();
+</script>
+
+{% endblock %}
