@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth import login
 from .forms import RegisterForm
+from .models import PlayerProfile
 
 def register(request):
     if request.method == 'POST':
@@ -8,6 +9,7 @@ def register(request):
 
         if form.is_valid():
             user = form.save()
+            PlayerProfile.objects.get_or_create(user=user)
             login(request, user)
             return redirect('home')
     else:

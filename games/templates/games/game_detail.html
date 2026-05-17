@@ -16,8 +16,18 @@
 </h1>
 
 <div class="card">
-    <p><strong>Brancas:</strong> {{ game.white_player }}</p>
-    <p><strong>Pretas:</strong> {{ game.black_player }}</p>
+    <p>
+        <strong>Brancas:</strong> {{ game.white_player }}
+        {% if game.white_user and game.white_user.player_profile %}
+            (Elo {{ game.white_user.player_profile.elo }})
+        {% endif %}
+    </p>
+    <p>
+        <strong>Pretas:</strong> {{ game.black_player }}
+        {% if game.black_user and game.black_user.player_profile %}
+            (Elo {{ game.black_user.player_profile.elo }})
+        {% endif %}
+    </p>
     <p><strong>Criada em:</strong> {{ game.created_at }}</p>
 </div>
 

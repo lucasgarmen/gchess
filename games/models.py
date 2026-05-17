@@ -31,6 +31,7 @@ class ChessGame(models.Model):
     pgn = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     result = models.CharField(max_length=20, choices=RESULT_CHOICES, default='unknown')
+    rating_applied = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='casual')
 

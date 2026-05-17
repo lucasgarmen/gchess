@@ -19,7 +19,7 @@
     <a href="{% url 'game_analyzer' %}">Analisar PGN</a>
 
     {% if user.is_authenticated %}
-        <span>Olá, {{ user.username }}</span>
+        <span>Olá, {{ user.username }}{% if user.player_profile %} · Elo {{ user.player_profile.elo }}{% endif %}</span>
 
         <div class="notification-area">
             <button id="notification-toggle" type="button">Convites <span id="notification-count" hidden>0</span></button>

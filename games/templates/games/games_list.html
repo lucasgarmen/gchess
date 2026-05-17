@@ -22,8 +22,18 @@ Partidas
         Partida {{ game.id }}
     {% endif %}
     </h2>
-    <p>Brancas: {{ game.white_player }}</p>
-    <p>Pretas: {{ game.black_player }}</p>
+    <p>
+        Brancas: {{ game.white_player }}
+        {% if game.white_user and game.white_user.player_profile %}
+            (Elo {{ game.white_user.player_profile.elo }})
+        {% endif %}
+    </p>
+    <p>
+        Pretas: {{ game.black_player }}
+        {% if game.black_user and game.black_user.player_profile %}
+            (Elo {{ game.black_user.player_profile.elo }})
+        {% endif %}
+    </p>
     <p>Criada em: {{ game.created_at }}</p>
 
     <a href="{% url 'game_detail' game.id %}">

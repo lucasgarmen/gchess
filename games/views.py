@@ -12,6 +12,7 @@ import random
 import re
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
+from accounts.models import PlayerProfile
 from .models import ChessGame, GameInvitation, Move, UserPresence
 
 PROMOTION_PIECES = {
@@ -22,6 +23,7 @@ PROMOTION_PIECES = {
 }
 
 ONLINE_SECONDS = 60
+ELO_K_FACTOR = 32
 
 
 def online_since():
@@ -31,6 +33,46 @@ def online_since():
 def touch_presence(user):
     if user.is_authenticated:
         UserPresence.objects.update_or_create(user=user)
+        PlayerProfile.objects.get_or_create(user=user)
+
+
+def expected_elo_score(player_elo, opponent_elo):
+    return 1 / (1 + 10 ** ((opponent_elo - player_elo) / 400))
+
+
+def apply_rating_after_game(game):
+    if (
+        game.rating_applied or
+        game.status != 'finished' or
+        game.result not in ('white', 'black', 'draw') or
+        not game.white_user_id or
+        not game.black_user_id
+    ):
+        return
+
+    white_profile, _ = PlayerProfile.objects.get_or_create(user=game.white_user)
+    black_profile, _ = PlayerProfile.objects.get_or_create(user=game.black_user)
+
+    if game.result == 'white':
+        white_score = 1
+        black_score = 0
+    elif game.result == 'black':
+        white_score = 0
+        black_score = 1
+    else:
+        white_score = 0.5
+        black_score = 0.5
+
+    white_expected = expected_elo_score(white_profile.elo, black_profile.elo)
+    black_expected = expected_elo_score(black_profile.elo, white_profile.elo)
+
+    white_profile.elo = round(white_profile.elo + ELO_K_FACTOR * (white_score - white_expected))
+    black_profile.elo = round(black_profile.elo + ELO_K_FACTOR * (black_score - black_expected))
+    white_profile.save(update_fields=['elo'])
+    black_profile.save(update_fields=['elo'])
+
+    game.rating_applied = True
+    game.save(update_fields=['rating_applied'])
 
 
 def game_access_filter(user):
@@ -210,6 +252,7 @@ def sync_finished_game_status(game, finished_info):
         game.result = finished_info['winner']
 
     game.save(update_fields=['status', 'result'])
+    apply_rating_after_game(game)
 
 
 def get_user_color_for_game(game, user):
@@ -327,6 +370,7 @@ def save_move(request, game_id):
             game.result = data['winner']
 
         game.save(update_fields=['status', 'result'])
+        apply_rating_after_game(game)
 
     return JsonResponse({
         'status': 'ok',
@@ -348,6 +392,7 @@ def mark_finished(request, game_id):
         game.result = data['winner']
 
     game.save(update_fields=['status', 'result'])
+    apply_rating_after_game(game)
 
     return JsonResponse({
         'status': 'ok',
