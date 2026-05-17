@@ -1,7 +1,7 @@
 import chess
 from django.test import SimpleTestCase
 
-from .views import read_analyzer_game, read_internal_coordinate_game
+from .views import evaluate_board_outcome, read_analyzer_game, read_internal_coordinate_game
 
 
 class AnalyzerPgnParsingTests(SimpleTestCase):
@@ -33,3 +33,28 @@ class AnalyzerPgnParsingTests(SimpleTestCase):
             board.push(move)
 
         self.assertEqual(san_moves, ["e4", "f5", "exf5", "e6", "f6"])
+
+
+class DrawOutcomeTests(SimpleTestCase):
+    def test_detects_stalemate(self):
+        board = chess.Board("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1")
+
+        self.assertEqual(evaluate_board_outcome(board)["result"], "draw")
+
+    def test_detects_insufficient_material(self):
+        board = chess.Board("8/8/8/8/8/8/4N3/4K2k w - - 0 1")
+
+        self.assertEqual(evaluate_board_outcome(board)["result"], "draw")
+
+    def test_detects_fifty_move_rule(self):
+        board = chess.Board("8/8/8/8/8/8/4K3/4R2k w - - 100 1")
+
+        self.assertEqual(evaluate_board_outcome(board)["reason"], "fifty_moves")
+
+    def test_detects_threefold_repetition_claim(self):
+        board = chess.Board()
+
+        for move in ["g1f3", "g8f6", "f3g1", "f6g8"] * 2:
+            board.push(chess.Move.from_uci(move))
+
+        self.assertEqual(evaluate_board_outcome(board)["reason"], "threefold_repetition")

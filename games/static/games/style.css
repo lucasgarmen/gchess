@@ -89,6 +89,31 @@ a:hover {
     transition: opacity 0.2s ease;
 }
 
+.games-columns {
+    display: grid;
+    gap: 24px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    max-width: 980px;
+}
+
+.games-column h2 {
+    margin: 0 0 12px;
+}
+
+.games-column .game-card {
+    display: block;
+    margin: 0 0 18px;
+    width: 100%;
+}
+
+.games-column-empty {
+    background-color: rgba(240, 217, 181, 0.08);
+    border: 1px solid rgba(240, 217, 181, 0.14);
+    border-radius: 8px;
+    margin: 0;
+    padding: 14px;
+}
+
 .game-card h2 {
     font-size: 20px;
     margin: 0 0 10px;
@@ -1136,6 +1161,10 @@ select:focus {
     .game-card {
         margin-right: 0;
         width: 100%;
+    }
+
+    .games-columns {
+        grid-template-columns: 1fr;
     }
 
     .board-wrapper {

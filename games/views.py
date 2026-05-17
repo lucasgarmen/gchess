@@ -24,8 +24,10 @@ PROMOTION_PIECES = {
 }
 
 ONLINE_SECONDS = 60
+PRESENCE_TOUCH_SECONDS = 30
 ELO_K_FACTOR = 32
 CLOCK_FIELDS = ['white_time_seconds', 'black_time_seconds', 'active_clock_color', 'clock_started_at', 'status', 'result']
+PRESENCE_TOUCH_CACHE = {}
 
 
 def online_since():
@@ -33,9 +35,24 @@ def online_since():
 
 
 def touch_presence(user):
-    if user.is_authenticated:
-        UserPresence.objects.update_or_create(user=user)
-        PlayerProfile.objects.get_or_create(user=user)
+    if not user.is_authenticated:
+        return
+
+    now = timezone.now()
+    cached_touch = PRESENCE_TOUCH_CACHE.get(user.id)
+
+    if cached_touch and (now - cached_touch).total_seconds() < PRESENCE_TOUCH_SECONDS:
+        return
+
+    presence, created = UserPresence.objects.get_or_create(user=user)
+
+    if created or (now - presence.last_seen).total_seconds() >= PRESENCE_TOUCH_SECONDS:
+        UserPresence.objects.filter(id=presence.id).update(last_seen=now)
+        PRESENCE_TOUCH_CACHE[user.id] = now
+    else:
+        PRESENCE_TOUCH_CACHE[user.id] = presence.last_seen
+
+    PlayerProfile.objects.get_or_create(user=user)
 
 
 def expected_elo_score(player_elo, opponent_elo):
@@ -220,6 +237,21 @@ def apply_clock_elapsed(game, now=None):
 
     return None
 
+
+def finish_clock_if_expired(game, now=None):
+    if not clock_enabled(game) or game.status == 'finished' or not game.active_clock_color or not game.clock_started_at:
+        return None
+
+    now = now or timezone.now()
+    elapsed_seconds = int((now - game.clock_started_at).total_seconds())
+    active_color = game.active_clock_color
+    remaining_seconds = remaining_time_for(game, active_color) or 0
+
+    if elapsed_seconds >= remaining_seconds:
+        return finish_game_by_timeout(game, active_color)
+
+    return None
+
 LOW_ELO_SKILL_LEVELS = {
     500: 0,
     800: 2,
@@ -274,7 +306,9 @@ def games_list(request):
         })
 
     return render(request, 'games/games_list.html', {
-        'game_cards': game_cards
+        'game_cards': game_cards,
+        'in_progress_cards': [card for card in game_cards if card['is_in_progress']],
+        'finished_cards': [card for card in game_cards if card['is_finished']],
     })
 
 
@@ -314,31 +348,68 @@ def get_finished_game_info(game):
         return {
             'finished': True,
             'winner': game.result if game.result in ('white', 'black') else None,
+            'result': game.result,
         }
 
+    board, error = board_from_game_moves(game)
+
+    if error:
+        return {'finished': False, 'winner': None, 'result': None}
+
+    return evaluate_board_outcome(board)
+
+
+def build_chess_move(move):
+    promotion = PROMOTION_PIECES.get(move.promotion or '')
+    return chess.Move.from_uci(f'{move.from_square}{move.to_square}{promotion or ""}')
+
+
+def build_chess_move_from_data(move_data):
+    promotion = PROMOTION_PIECES.get(move_data.get('promotion') or '')
+    return chess.Move.from_uci(f"{move_data['from']}{move_data['to']}{promotion or ''}")
+
+
+def board_from_game_moves(game):
     board = chess.Board()
 
     for move in game.moves.all().order_by('move_number', 'id'):
         try:
             chess_move = build_chess_move(move)
         except ValueError:
-            return {'finished': False, 'winner': None}
+            return board, 'invalid_move'
 
         if chess_move not in board.legal_moves:
-            return {'finished': False, 'winner': None}
+            return board, 'illegal_move'
 
         board.push(chess_move)
 
+    return board, None
+
+
+def evaluate_board_outcome(board):
     if board.is_checkmate():
         winner = 'black' if board.turn == chess.WHITE else 'white'
-        return {'finished': True, 'winner': winner}
+        return {'finished': True, 'winner': winner, 'result': winner}
 
-    return {'finished': False, 'winner': None}
+    if board.is_stalemate():
+        return {'finished': True, 'winner': None, 'result': 'draw', 'reason': 'stalemate'}
 
+    if board.is_insufficient_material():
+        return {'finished': True, 'winner': None, 'result': 'draw', 'reason': 'insufficient_material'}
 
-def build_chess_move(move):
-    promotion = PROMOTION_PIECES.get(move.promotion or '')
-    return chess.Move.from_uci(f'{move.from_square}{move.to_square}{promotion or ""}')
+    if board.is_fivefold_repetition():
+        return {'finished': True, 'winner': None, 'result': 'draw', 'reason': 'fivefold_repetition'}
+
+    if board.is_seventyfive_moves():
+        return {'finished': True, 'winner': None, 'result': 'draw', 'reason': 'seventyfive_moves'}
+
+    if board.is_fifty_moves() or board.can_claim_fifty_moves():
+        return {'finished': True, 'winner': None, 'result': 'draw', 'reason': 'fifty_moves'}
+
+    if board.is_repetition(3) or board.can_claim_threefold_repetition():
+        return {'finished': True, 'winner': None, 'result': 'draw', 'reason': 'threefold_repetition'}
+
+    return {'finished': False, 'winner': None, 'result': None}
 
 
 def sync_finished_game_status(game, finished_info):
@@ -347,8 +418,8 @@ def sync_finished_game_status(game, finished_info):
 
     game.status = 'finished'
 
-    if finished_info['winner'] in ('white', 'black'):
-        game.result = finished_info['winner']
+    if finished_info.get('result') in ('white', 'black', 'draw'):
+        game.result = finished_info['result']
 
     game.save(update_fields=['status', 'result'])
     apply_rating_after_game(game)
@@ -466,6 +537,19 @@ def save_move(request, game_id):
     if data.get('piece_color') != expected_color:
         return JsonResponse({'error': 'Não é a vez dessa cor.'}, status=400)
 
+    board, board_error = board_from_game_moves(game)
+
+    if board_error:
+        return JsonResponse({'error': 'A posicao salva da partida esta invalida.'}, status=409)
+
+    try:
+        chess_move = build_chess_move_from_data(data)
+    except (KeyError, ValueError):
+        return JsonResponse({'error': 'Jogada invalida.'}, status=400)
+
+    if chess_move not in board.legal_moves:
+        return JsonResponse({'error': 'Jogada ilegal nessa posicao.'}, status=400)
+
     move = Move.objects.create(
         game=game,
         move_number=data['move_number'],
@@ -476,13 +560,20 @@ def save_move(request, game_id):
         promotion=data.get('promotion'),
     )
 
-    if data.get('game_finished'):
+    board.push(chess_move)
+    outcome = evaluate_board_outcome(board)
+
+    if outcome['finished'] or data.get('game_finished'):
         game.status = 'finished'
         game.active_clock_color = ''
         game.clock_started_at = None
 
-        if data.get('winner') in ('white', 'black'):
+        if outcome.get('result') in ('white', 'black', 'draw'):
+            game.result = outcome['result']
+        elif data.get('winner') in ('white', 'black'):
             game.result = data['winner']
+        elif data.get('result') == 'draw':
+            game.result = 'draw'
 
         game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at'])
         apply_rating_after_game(game)
@@ -495,6 +586,10 @@ def save_move(request, game_id):
         'status': 'ok',
         'move_id': move.id,
         'clock': serialize_clock(game),
+        'game_finished': game.status == 'finished',
+        'winner': game.result if game.result in ('white', 'black') else None,
+        'result': game.result if game.result in ('white', 'black', 'draw') else None,
+        'draw_reason': outcome.get('reason'),
     })
 
 
@@ -523,6 +618,9 @@ def mark_finished(request, game_id):
         return JsonResponse({
             'status': 'ok',
             'clock': serialize_clock(game),
+            'game_finished': True,
+            'winner': game.result if game.result in ('white', 'black') else None,
+            'result': game.result,
         })
 
     game.status = 'finished'
@@ -531,6 +629,8 @@ def mark_finished(request, game_id):
 
     if data.get('winner') in ('white', 'black'):
         game.result = data['winner']
+    elif data.get('result') == 'draw':
+        game.result = 'draw'
 
     game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at'])
     apply_rating_after_game(game)
@@ -538,6 +638,9 @@ def mark_finished(request, game_id):
     return JsonResponse({
         'status': 'ok',
         'clock': serialize_clock(game),
+        'result': game.result,
+        'game_finished': game.status == 'finished',
+        'winner': game.result if game.result in ('white', 'black') else None,
     })
 
 
@@ -684,7 +787,7 @@ def reject_invitation(request, invitation_id):
 def game_moves(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
-    apply_clock_elapsed(game)
+    finish_clock_if_expired(game)
 
     moves = [
         {
@@ -703,6 +806,7 @@ def game_moves(request, game_id):
         'clock': serialize_clock(game),
         'game_finished': game.status == 'finished',
         'winner': game.result if game.result in ('white', 'black') else None,
+        'result': game.result if game.result in ('white', 'black', 'draw') else None,
     })
 
 import chess.pgn

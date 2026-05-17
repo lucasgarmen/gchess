@@ -1,0 +1,33 @@
+{% with game=card.game %}
+<div class="card game-card{% if card.is_finished %} game-card-finished{% endif %}{% if card.is_in_progress %} game-card-in-progress{% endif %}">
+    <p class="game-card-status {{ card.status.class }}">{{ card.status.text }}</p>
+    <h2>
+    {% if game.title %}
+        {{ game.title }}
+    {% else %}
+        Partida {{ game.id }}
+    {% endif %}
+    </h2>
+    <p>
+        Brancas: {{ game.white_player }}
+        {% if game.white_user and game.white_user.player_profile %}
+            (Elo {{ game.white_user.player_profile.elo }})
+        {% endif %}
+    </p>
+    <p>
+        Pretas: {{ game.black_player }}
+        {% if game.black_user and game.black_user.player_profile %}
+            (Elo {{ game.black_user.player_profile.elo }})
+        {% endif %}
+    </p>
+    <p>Criada em: {{ game.created_at }}</p>
+
+    <a href="{% url 'game_detail' game.id %}">
+        {% if card.is_finished %}
+            Revisão da partida
+        {% else %}
+            Continuar partida
+        {% endif %}
+    </a>
+</div>
+{% endwith %}

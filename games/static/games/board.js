@@ -788,7 +788,8 @@ async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromot
     clearSelection();
     switchTurn();
 
-    const gameEnded = checkGameEnd();
+    const gameOutcome = checkGameEnd();
+    const gameEnded = Boolean(gameOutcome);
 
     renderSavedMoveList();
     updateTurnIndicator();
@@ -797,7 +798,8 @@ async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromot
 
     saveMoveToDatabase(playedMove, {
         finished: gameEnded,
-        winner: gameEnded ? movingColor : null,
+        winner: gameOutcome?.winner || null,
+        result: gameOutcome?.result || null,
     });
 
     if (isComputerMode() && coachEnabled && movingColor === playerColor()) {
@@ -1041,7 +1043,7 @@ if (clockIsEnabled()) {
 }
 
 if (isMultiplayerMode()) {
-    setInterval(syncMovesFromServer, 2500);
+    setInterval(syncMovesFromServer, 1500);
 }
 
 function clockIsEnabled() {
@@ -1102,10 +1104,31 @@ function applyClockState(clock) {
 
         if (clock.result === 'white' || clock.result === 'black') {
             showGameStatus(clock.result === 'white' ? 'Vitória das brancas' : 'Vitória das pretas');
+        } else if (clock.result === 'draw') {
+            showGameStatus('Partida empatada');
         }
     }
 
     renderClock();
+}
+
+function showServerGameResult(data) {
+    if (!data || !data.game_finished) {
+        return;
+    }
+
+    gameOver = true;
+
+    if (data.result === 'draw') {
+        showGameStatus('Partida empatada');
+        updateTurnIndicator();
+        return;
+    }
+
+    if (data.winner === 'white' || data.winner === 'black') {
+        showGameStatus(data.winner === 'white' ? 'Vitória das brancas' : 'Vitória das pretas');
+        updateTurnIndicator();
+    }
 }
 
 function renderClock() {
@@ -1463,9 +1486,45 @@ function isCheckmate(color) {
     return isKingInCheck(color) && !hasAnyLegalMove(color);
 }
 
+function isStalemate(color) {
+    return !isKingInCheck(color) && !hasAnyLegalMove(color);
+}
+
+function bishopSquareColor(coord) {
+    return (getCol(coord) + getRow(coord)) % 2;
+}
+
+function currentNonKingPieces() {
+    return Array.from(document.querySelectorAll('.square'))
+        .filter(square => square.dataset.color && square.dataset.type && square.dataset.type !== 'king')
+        .map(square => ({
+            type: square.dataset.type,
+            color: square.dataset.color,
+            coord: square.dataset.coord,
+        }));
+}
+
+function hasInsufficientMaterial() {
+    const pieces = currentNonKingPieces();
+
+    if (pieces.length === 0) {
+        return true;
+    }
+
+    if (pieces.length === 1 && ['bishop', 'horse'].includes(pieces[0].type)) {
+        return true;
+    }
+
+    if (pieces.length === 2 && pieces.every(piece => piece.type === 'bishop')) {
+        return bishopSquareColor(pieces[0].coord) === bishopSquareColor(pieces[1].coord);
+    }
+
+    return false;
+}
+
 function checkGameEnd() {
     if (analysisMode) {
-        return false;
+        return null;
     }
 
     if (isCheckmate(currentTurn)) {
@@ -1473,10 +1532,35 @@ function checkGameEnd() {
         clearSelection();
         showGameStatus('xeque-mate!');
         updateTurnIndicator();
-        return true;
+        return {
+            result: getEnemyColor(currentTurn),
+            winner: getEnemyColor(currentTurn),
+        };
     }
 
-    return false;
+    if (isStalemate(currentTurn)) {
+        gameOver = true;
+        clearSelection();
+        showGameStatus('Partida empatada por ahogado');
+        updateTurnIndicator();
+        return {
+            result: 'draw',
+            winner: null,
+        };
+    }
+
+    if (hasInsufficientMaterial()) {
+        gameOver = true;
+        clearSelection();
+        showGameStatus('Partida empatada por material insuficiente');
+        updateTurnIndicator();
+        return {
+            result: 'draw',
+            winner: null,
+        };
+    }
+
+    return null;
 }
 
 function refreshGameStatus() {
@@ -1485,11 +1569,17 @@ function refreshGameStatus() {
         return;
     }
 
-    gameOver = isViewingLatestPosition() && isCheckmate(currentTurn);
+    gameOver = isViewingLatestPosition() && (isCheckmate(currentTurn) || isStalemate(currentTurn) || hasInsufficientMaterial());
 
-    if (gameOver) {
+    if (gameOver && isCheckmate(currentTurn)) {
         showGameStatus('xeque-mate!');
         syncFinishedGame(getEnemyColor(currentTurn));
+    } else if (gameOver && isStalemate(currentTurn)) {
+        showGameStatus('Partida empatada por ahogado');
+        syncFinishedGame(null, { result: 'draw' });
+    } else if (gameOver && hasInsufficientMaterial()) {
+        showGameStatus('Partida empatada por material insuficiente');
+        syncFinishedGame(null, { result: 'draw' });
     } else {
         hideGameStatus();
     }
@@ -1739,6 +1829,7 @@ function saveMoveToDatabase(moveData, gameState = {}) {
         ...moveData,
         game_finished: Boolean(gameState.finished),
         winner: gameState.winner,
+        result: gameState.result,
     };
 
     fetch(`/games/${GAME_ID}/save-move/`, {
@@ -1760,6 +1851,7 @@ function saveMoveToDatabase(moveData, gameState = {}) {
     .then(data => {
         console.log('Movimento salvo:', data);
         applyClockState(data.clock);
+        showServerGameResult(data);
     })
     .catch(error => {
         console.error('Erro ao salvar movimento:', error);
@@ -1787,11 +1879,13 @@ function syncFinishedGame(winner, options = {}) {
             winner: winner,
             reason: options.reason || null,
             loser: options.loser || null,
+            result: options.result || null,
         }),
     })
     .then(response => response.ok ? response.json() : Promise.reject(response))
     .then(data => {
         applyClockState(data.clock);
+        showServerGameResult(data);
     })
     .catch(error => {
         finishedGameSynced = false;
@@ -1916,6 +2010,7 @@ async function syncMovesFromServer() {
 
         const data = await response.json();
         applyClockState(data.clock);
+        showServerGameResult(data);
 
         if (data.game_finished) {
             gameOver = true;
