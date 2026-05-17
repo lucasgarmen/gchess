@@ -11,6 +11,7 @@ import chess
 import random
 import re
 from django.http import JsonResponse
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 from accounts.models import PlayerProfile
 from .models import ChessGame, GameInvitation, Move, UserPresence
@@ -149,6 +150,7 @@ LOW_ELO_WEAKNESS = {
     },
 }
 
+@ensure_csrf_cookie
 def home(request):
     touch_presence(request.user)
     return render(request, 'games/home.html')
