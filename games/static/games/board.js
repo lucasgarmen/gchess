@@ -18,6 +18,8 @@ let analysisGameState = null;
 let analysisPositions = [];
 let analysisPositionIndex = 0;
 
+const DRAG_PIECE_SCALE = 1.7;
+
 let castlingRights = {
     white: {
         kingMoved: false,
@@ -622,8 +624,8 @@ function createDragPiece(square, event) {
     dragPiece.classList.add('drag-piece');
     dragPiece.style.left = '0';
     dragPiece.style.top = '0';
-    dragPiece.style.width = `${squareRect.width}px`;
-    dragPiece.style.height = `${squareRect.height}px`;
+    dragPiece.style.width = `${squareRect.width * DRAG_PIECE_SCALE}px`;
+    dragPiece.style.height = `${squareRect.height * DRAG_PIECE_SCALE}px`;
     dragPiece.draggable = false;
 
     document.body.appendChild(dragPiece);
