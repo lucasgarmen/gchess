@@ -34,6 +34,11 @@ class ChessGame(models.Model):
     rating_applied = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='casual')
+    time_control_minutes = models.PositiveIntegerField(blank=True, null=True)
+    white_time_seconds = models.PositiveIntegerField(blank=True, null=True)
+    black_time_seconds = models.PositiveIntegerField(blank=True, null=True)
+    active_clock_color = models.CharField(max_length=10, blank=True)
+    clock_started_at = models.DateTimeField(blank=True, null=True)
 
     def __str__(self):
         return self.title
@@ -83,6 +88,7 @@ class GameInvitation(models.Model):
     opponent = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True, related_name='received_game_invitations')
     opponent_mode = models.CharField(max_length=20, choices=OPPONENT_CHOICES)
     creator_color = models.CharField(max_length=20, choices=COLOR_CHOICES)
+    time_control_minutes = models.PositiveIntegerField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     game = models.ForeignKey(ChessGame, on_delete=models.SET_NULL, blank=True, null=True, related_name='invitations')
     created_at = models.DateTimeField(auto_now_add=True)

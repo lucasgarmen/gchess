@@ -75,6 +75,18 @@
         <h2>PGN</h2>
         <p id="turn-indicator">Vez das brancas</p>
         <p id="game-status" class="game-status" hidden></p>
+        {% if clock %}
+        <div id="game-clock" class="game-clock">
+            <div class="clock-row" data-clock-color="white">
+                <span>Brancas</span>
+                <strong id="white-clock">--:--</strong>
+            </div>
+            <div class="clock-row" data-clock-color="black">
+                <span>Pretas</span>
+                <strong id="black-clock">--:--</strong>
+            </div>
+        </div>
+        {% endif %}
 
         <div class="history-controls">
             <button id="prev-move">Anterior</button>
@@ -100,14 +112,16 @@
 <a href="{% url 'games_list' %}">Voltar para partidas</a>
 
 {{ moves|json_script:"saved-moves-data" }}
+{{ clock|json_script:"game-clock-data" }}
 
 <script>
     const GAME_ID = "{{ game.id }}";
     const SAVED_MOVES = JSON.parse(document.getElementById('saved-moves-data').textContent);
     const GAME_PLAYER_COLOR = "{{ player_color|default:'' }}";
     const MULTIPLAYER_MODE = {{ multiplayer_mode|yesno:"true,false" }};
+    const GAME_CLOCK = JSON.parse(document.getElementById('game-clock-data').textContent);
 </script>
 
-<script src="{% static 'games/board.js' %}?v=38"></script>
+<script src="{% static 'games/board.js' %}?v=39"></script>
 
 {% endblock %}

@@ -6,6 +6,7 @@ Nova Partida
 
 {% block content %}
 
+<main class="game-create-page">
 <h1>Nova Partida</h1>
 
 <form method="POST" class="form-card game-create-form" novalidate>
@@ -49,12 +50,21 @@ Nova Partida
         {% endfor %}
     </div>
 
+    <div class="form-field">
+        <label for="{{ form.time_control_minutes.id_for_label }}">Tempo por jogador (minutos)</label>
+        {{ form.time_control_minutes }}
+        {% for error in form.time_control_minutes.errors %}
+            <p class="field-error">{{ error }}</p>
+        {% endfor %}
+    </div>
+
     <button type="submit">Criar partida</button>
 </form>
 
 <script>
     const opponentModeInputs = document.querySelectorAll('input[name="opponent_mode"]');
     const opponentNameField = document.getElementById('opponent-name-field');
+    const timeControlInput = document.getElementById('{{ form.time_control_minutes.id_for_label }}');
 
     function updateOpponentNameVisibility() {
         const selectedMode = document.querySelector('input[name="opponent_mode"]:checked')?.value;
@@ -65,7 +75,30 @@ Nova Partida
         input.addEventListener('change', updateOpponentNameVisibility);
     });
 
+    if (timeControlInput) {
+        timeControlInput.addEventListener('wheel', function (event) {
+            event.preventDefault();
+
+            const currentValue = timeControlInput.value === ''
+                ? null
+                : Number(timeControlInput.value);
+
+            if (event.deltaY < 0) {
+                timeControlInput.value = Math.min((currentValue || 0) + 1, 5000);
+                return;
+            }
+
+            if (!currentValue || currentValue <= 1) {
+                timeControlInput.value = '';
+                return;
+            }
+
+            timeControlInput.value = currentValue - 1;
+        }, { passive: false });
+    }
+
     updateOpponentNameVisibility();
 </script>
+</main>
 
 {% endblock %}

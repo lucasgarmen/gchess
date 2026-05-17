@@ -25,6 +25,7 @@ PROMOTION_PIECES = {
 
 ONLINE_SECONDS = 60
 ELO_K_FACTOR = 32
+CLOCK_FIELDS = ['white_time_seconds', 'black_time_seconds', 'active_clock_color', 'clock_started_at', 'status', 'result']
 
 
 def online_since():
@@ -107,6 +108,7 @@ def resolve_creator_color(color_choice):
 
 def create_game_from_invitation(invitation, opponent):
     creator_color = resolve_creator_color(invitation.creator_color)
+    clock_settings = build_initial_clock_settings(invitation.time_control_minutes)
 
     if creator_color == 'white':
         white_user = invitation.creator
@@ -121,7 +123,102 @@ def create_game_from_invitation(invitation, opponent):
         black_user=black_user,
         white_player=white_user.username,
         black_player=black_user.username,
+        time_control_minutes=invitation.time_control_minutes,
+        **clock_settings,
     )
+
+
+def build_initial_clock_settings(time_control_minutes):
+    if not time_control_minutes:
+        return {}
+
+    initial_seconds = time_control_minutes * 60
+
+    return {
+        'white_time_seconds': initial_seconds,
+        'black_time_seconds': initial_seconds,
+        'active_clock_color': '',
+        'clock_started_at': None,
+    }
+
+
+def clock_enabled(game):
+    return bool(game.time_control_minutes)
+
+
+def remaining_time_for(game, color):
+    return game.white_time_seconds if color == 'white' else game.black_time_seconds
+
+
+def set_remaining_time_for(game, color, seconds):
+    seconds = max(0, int(seconds))
+
+    if color == 'white':
+        game.white_time_seconds = seconds
+    else:
+        game.black_time_seconds = seconds
+
+
+def serialize_clock(game):
+    if not clock_enabled(game):
+        return None
+
+    return {
+        'enabled': True,
+        'time_control_minutes': game.time_control_minutes,
+        'white_seconds': game.white_time_seconds,
+        'black_seconds': game.black_time_seconds,
+        'active_color': game.active_clock_color if game.status != 'finished' else '',
+        'started_at': game.clock_started_at.isoformat() if game.clock_started_at else None,
+        'server_now': timezone.now().isoformat(),
+        'status': game.status,
+        'result': game.result,
+    }
+
+
+def finish_game_by_timeout(game, loser):
+    winner = 'black' if loser == 'white' else 'white'
+    game.status = 'finished'
+    game.result = winner
+    game.active_clock_color = ''
+    game.clock_started_at = None
+    set_remaining_time_for(game, loser, 0)
+    game.save(update_fields=CLOCK_FIELDS)
+    apply_rating_after_game(game)
+    return winner
+
+
+def apply_clock_elapsed(game, now=None):
+    if not clock_enabled(game) or game.status == 'finished' or not game.active_clock_color:
+        return None
+
+    now = now or timezone.now()
+
+    if not game.clock_started_at:
+        game.clock_started_at = now
+        game.save(update_fields=['clock_started_at'])
+        return None
+
+    elapsed_seconds = int((now - game.clock_started_at).total_seconds())
+
+    if elapsed_seconds <= 0:
+        return None
+
+    active_color = game.active_clock_color
+    remaining_seconds = remaining_time_for(game, active_color) or 0
+    updated_remaining = remaining_seconds - elapsed_seconds
+    set_remaining_time_for(game, active_color, updated_remaining)
+    game.clock_started_at = now
+
+    if updated_remaining <= 0:
+        return finish_game_by_timeout(game, active_color)
+
+    game.save(update_fields=[
+        f'{active_color}_time_seconds',
+        'clock_started_at',
+    ])
+
+    return None
 
 LOW_ELO_SKILL_LEVELS = {
     500: 0,
@@ -283,6 +380,7 @@ def get_user_color_for_game(game, user):
 def game_detail(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
+    apply_clock_elapsed(game)
     player_color = player_color_for_game(game, request.user)
     moves = [
         {
@@ -301,6 +399,7 @@ def game_detail(request, game_id):
         'moves': moves,
         'player_color': player_color,
         'multiplayer_mode': bool(game.white_user_id and game.black_user_id),
+        'clock': serialize_clock(game),
     })
 
 @login_required   
@@ -324,6 +423,7 @@ def game_create(request):
                         opponent=opponent,
                         opponent_mode='direct',
                         creator_color=form.cleaned_data['color_choice'],
+                        time_control_minutes=form.cleaned_data['time_control_minutes'],
                     )
                     return redirect('game_invitation_wait', invitation_id=invitation.id)
             else:
@@ -331,6 +431,7 @@ def game_create(request):
                     creator=request.user,
                     opponent_mode='random',
                     creator_color=form.cleaned_data['color_choice'],
+                    time_control_minutes=form.cleaned_data['time_control_minutes'],
                 )
                 return redirect('game_invitation_wait', invitation_id=invitation.id)
     else:
@@ -346,6 +447,16 @@ def save_move(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
     data = json.loads(request.body)
+    timeout_winner = apply_clock_elapsed(game)
+
+    if timeout_winner:
+        return JsonResponse({
+            'error': 'Tempo esgotado.',
+            'clock': serialize_clock(game),
+            'game_finished': True,
+            'winner': timeout_winner,
+        }, status=409)
+
     player_color = player_color_for_game(game, request.user)
     expected_color = 'white' if game.moves.count() % 2 == 0 else 'black'
 
@@ -367,16 +478,23 @@ def save_move(request, game_id):
 
     if data.get('game_finished'):
         game.status = 'finished'
+        game.active_clock_color = ''
+        game.clock_started_at = None
 
         if data.get('winner') in ('white', 'black'):
             game.result = data['winner']
 
-        game.save(update_fields=['status', 'result'])
+        game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at'])
         apply_rating_after_game(game)
+    elif clock_enabled(game):
+        game.active_clock_color = 'black' if expected_color == 'white' else 'white'
+        game.clock_started_at = timezone.now()
+        game.save(update_fields=['active_clock_color', 'clock_started_at'])
 
     return JsonResponse({
         'status': 'ok',
-        'move_id': move.id
+        'move_id': move.id,
+        'clock': serialize_clock(game),
     })
 
 
@@ -388,16 +506,38 @@ def mark_finished(request, game_id):
 
     data = json.loads(request.body)
 
+    if data.get('reason') == 'timeout' and data.get('loser') in ('white', 'black'):
+        apply_clock_elapsed(game)
+
+        if game.status != 'finished':
+            remaining_seconds = remaining_time_for(game, data['loser'])
+
+            if remaining_seconds is None or remaining_seconds > 0:
+                return JsonResponse({
+                    'error': 'O tempo ainda nÃ£o acabou.',
+                    'clock': serialize_clock(game),
+                }, status=409)
+
+            finish_game_by_timeout(game, data['loser'])
+
+        return JsonResponse({
+            'status': 'ok',
+            'clock': serialize_clock(game),
+        })
+
     game.status = 'finished'
+    game.active_clock_color = ''
+    game.clock_started_at = None
 
     if data.get('winner') in ('white', 'black'):
         game.result = data['winner']
 
-    game.save(update_fields=['status', 'result'])
+    game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at'])
     apply_rating_after_game(game)
 
     return JsonResponse({
         'status': 'ok',
+        'clock': serialize_clock(game),
     })
 
 
@@ -416,11 +556,13 @@ def invitation_status(request, invitation_id):
     touch_presence(request.user)
     invitation = get_object_or_404(GameInvitation, id=invitation_id, creator=request.user)
 
-    return JsonResponse({
+    response = JsonResponse({
         'status': invitation.status,
         'game_id': invitation.game_id,
         'game_url': f'/partidas/{invitation.game_id}/' if invitation.game_id else None,
     })
+    response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    return response
 
 
 @login_required
@@ -465,6 +607,7 @@ def game_notifications(request):
                 'creator': invitation.creator.username,
                 'opponent_mode': invitation.opponent_mode,
                 'creator_color': invitation.creator_color,
+                'time_control_minutes': invitation.time_control_minutes,
             }
             for invitation in invitations
         ]
@@ -541,6 +684,7 @@ def reject_invitation(request, invitation_id):
 def game_moves(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
+    apply_clock_elapsed(game)
 
     moves = [
         {
@@ -554,7 +698,12 @@ def game_moves(request, game_id):
         for move in game.moves.all().order_by('move_number')
     ]
 
-    return JsonResponse({'moves': moves})
+    return JsonResponse({
+        'moves': moves,
+        'clock': serialize_clock(game),
+        'game_finished': game.status == 'finished',
+        'winner': game.result if game.result in ('white', 'black') else None,
+    })
 
 import chess.pgn
 import chess.engine

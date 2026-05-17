@@ -17,6 +17,8 @@ let analysisBoardState = null;
 let analysisGameState = null;
 let analysisPositions = [];
 let analysisPositionIndex = 0;
+let gameClock = typeof GAME_CLOCK !== 'undefined' ? GAME_CLOCK : null;
+let timeoutSyncInProgress = false;
 
 const DRAG_PIECE_SCALE = 1.7;
 
@@ -38,6 +40,8 @@ const board = document.getElementById('board');
 const turnIndicator = document.getElementById('turn-indicator');
 const gameStatus = document.getElementById('game-status');
 const pgnBox = document.getElementById('pgn-box');
+const whiteClock = document.getElementById('white-clock');
+const blackClock = document.getElementById('black-clock');
 
 const initialPosition = {
     a8: { type: 'rook', color: 'black' },
@@ -1030,9 +1034,123 @@ updateBoardOrientation();
 renderSavedMoveList();
 loadPositionUntil(SAVED_MOVES.length);
 updateCapturedMaterial();
+renderClock();
+
+if (clockIsEnabled()) {
+    setInterval(renderClock, 1000);
+}
 
 if (isMultiplayerMode()) {
     setInterval(syncMovesFromServer, 2500);
+}
+
+function clockIsEnabled() {
+    return Boolean(gameClock && gameClock.enabled);
+}
+
+function secondsSinceClockStart() {
+    if (!clockIsEnabled() || !gameClock.started_at || !gameClock.server_now) {
+        return 0;
+    }
+
+    const serverStartedAt = new Date(gameClock.started_at).getTime();
+    const serverNow = new Date(gameClock.server_now).getTime();
+    const localNow = Date.now();
+
+    if (Number.isNaN(serverStartedAt) || Number.isNaN(serverNow)) {
+        return 0;
+    }
+
+    return Math.max(0, Math.floor((localNow - serverNow + serverNow - serverStartedAt) / 1000));
+}
+
+function liveClockSeconds(color) {
+    if (!clockIsEnabled()) {
+        return null;
+    }
+
+    const baseSeconds = color === 'white'
+        ? gameClock.white_seconds
+        : gameClock.black_seconds;
+
+    if (gameOver || gameClock.status === 'finished' || gameClock.active_color !== color) {
+        return Math.max(0, baseSeconds || 0);
+    }
+
+    return Math.max(0, (baseSeconds || 0) - secondsSinceClockStart());
+}
+
+function formatClock(seconds) {
+    seconds = Math.max(0, Math.ceil(seconds || 0));
+
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+
+    return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function applyClockState(clock) {
+    if (!clock) {
+        return;
+    }
+
+    gameClock = clock;
+
+    if (clock.status === 'finished') {
+        gameOver = true;
+        finishedGameSynced = true;
+
+        if (clock.result === 'white' || clock.result === 'black') {
+            showGameStatus(clock.result === 'white' ? 'Vitória das brancas' : 'Vitória das pretas');
+        }
+    }
+
+    renderClock();
+}
+
+function renderClock() {
+    if (!clockIsEnabled() || !whiteClock || !blackClock) {
+        return;
+    }
+
+    const whiteSeconds = liveClockSeconds('white');
+    const blackSeconds = liveClockSeconds('black');
+
+    whiteClock.innerText = formatClock(whiteSeconds);
+    blackClock.innerText = formatClock(blackSeconds);
+
+    document.querySelectorAll('.clock-row').forEach(row => {
+        const color = row.dataset.clockColor;
+        const seconds = color === 'white' ? whiteSeconds : blackSeconds;
+        row.classList.toggle('active', !gameOver && gameClock.active_color === color);
+        row.classList.toggle('flagged', seconds <= 0);
+    });
+
+    if (!gameOver && gameClock.status !== 'finished') {
+        if (whiteSeconds <= 0) {
+            finishByTimeout('white');
+        } else if (blackSeconds <= 0) {
+            finishByTimeout('black');
+        }
+    }
+}
+
+function finishByTimeout(loser) {
+    if (timeoutSyncInProgress || gameOver) {
+        return;
+    }
+
+    const winner = loser === 'white' ? 'black' : 'white';
+    timeoutSyncInProgress = true;
+    gameOver = true;
+    clearSelection();
+    showGameStatus(loser === 'white' ? 'Tempo das brancas esgotado' : 'Tempo das pretas esgotado');
+    updateTurnIndicator();
+
+    syncFinishedGame(winner, {
+        reason: 'timeout',
+        loser: loser,
+    });
 }
 
 function coordToPosition(coord) {
@@ -1641,13 +1759,14 @@ function saveMoveToDatabase(moveData, gameState = {}) {
     })
     .then(data => {
         console.log('Movimento salvo:', data);
+        applyClockState(data.clock);
     })
     .catch(error => {
         console.error('Erro ao salvar movimento:', error);
     });
 }
 
-function syncFinishedGame(winner) {
+function syncFinishedGame(winner, options = {}) {
     if (
         finishedGameSynced ||
         typeof ANALYZER_MODE !== 'undefined' && ANALYZER_MODE ||
@@ -1664,10 +1783,19 @@ function syncFinishedGame(winner) {
             'Content-Type': 'application/json',
             'X-CSRFToken': getCSRFToken(),
         },
-        body: JSON.stringify({ winner: winner }),
+        body: JSON.stringify({
+            winner: winner,
+            reason: options.reason || null,
+            loser: options.loser || null,
+        }),
+    })
+    .then(response => response.ok ? response.json() : Promise.reject(response))
+    .then(data => {
+        applyClockState(data.clock);
     })
     .catch(error => {
         finishedGameSynced = false;
+        timeoutSyncInProgress = false;
         console.error('Erro ao finalizar partida:', error);
     });
 }
@@ -1787,6 +1915,16 @@ async function syncMovesFromServer() {
         }
 
         const data = await response.json();
+        applyClockState(data.clock);
+
+        if (data.game_finished) {
+            gameOver = true;
+
+            if (data.winner === 'white' || data.winner === 'black') {
+                showGameStatus(data.winner === 'white' ? 'Vitória das brancas' : 'Vitória das pretas');
+            }
+        }
+
         const serverMoves = data.moves || [];
         const hasDifferentMoves = serverMoves.length !== SAVED_MOVES.length ||
             serverMoves.some((move, index) => !movesAreEqual(move, SAVED_MOVES[index]));

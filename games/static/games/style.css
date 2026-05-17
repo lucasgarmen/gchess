@@ -188,6 +188,25 @@ a:hover {
     padding-top: 40px;
 }
 
+.game-create-page {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    padding-top: 40px;
+}
+
+.analyzer-create-page {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    padding-top: 40px;
+}
+
+.analyzer-create-page .form-card,
+.analyzer-create-page .card {
+    width: 100%;
+}
+
 .auth-card {
     box-sizing: border-box;
     max-width: 420px;
@@ -238,6 +257,7 @@ a:hover {
 
 .game-create-form {
     max-width: 520px;
+    width: 100%;
 }
 
 .field-help {
@@ -407,6 +427,10 @@ button {
 .trainer-chat-form input {
     box-sizing: border-box;
     margin: 0;
+}
+
+.time-control-input {
+    max-width: 10ch;
 }
 
 .trainer-chat-form button {
@@ -674,6 +698,38 @@ button {
     margin: 0 0 12px;
     padding: 10px 16px;
     border-radius: 6px;
+}
+
+.game-clock {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.clock-row {
+    align-items: center;
+    background-color: rgba(17, 17, 17, 0.54);
+    border: 1px solid rgba(240, 217, 181, 0.16);
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    padding: 9px 12px;
+}
+
+.clock-row.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(240, 217, 181, 0.12);
+}
+
+.clock-row.flagged {
+    border-color: var(--danger);
+    color: #ffd8d2;
+}
+
+.clock-row strong {
+    color: var(--accent-strong);
+    font-variant-numeric: tabular-nums;
+    font-size: 22px;
 }
 
 @media (max-width: 980px) {

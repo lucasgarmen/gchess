@@ -11,14 +11,22 @@ Aguardando oponente
         <h1>Aguardando oponente</h1>
 
         {% if invitation.opponent_mode == 'random' %}
-            <p>Procurando um jogador aleatório online...</p>
+            <p>Procurando um jogador aleatorio online...</p>
         {% else %}
             <p>Convite enviado para {{ invitation.opponent.username }}.</p>
         {% endif %}
+        <p>
+            Tempo:
+            {% if invitation.time_control_minutes %}
+                {{ invitation.time_control_minutes }} min por jogador
+            {% else %}
+                livre
+            {% endif %}
+        </p>
 
         <div class="loading-line"></div>
-        <p id="invitation-wait-status" class="field-help">Assim que alguém aceitar, a partida vai abrir automaticamente.</p>
-        <button id="cancel-invitation" type="button">Cancelar solicitação</button>
+        <p id="invitation-wait-status" class="field-help">Assim que alguem aceitar, a partida vai abrir automaticamente.</p>
+        <button id="cancel-invitation" type="button">Cancelar solicitacao</button>
     </section>
 </main>
 
@@ -27,6 +35,7 @@ Aguardando oponente
     const cancelInvitationUrl = "{% url 'cancel_invitation' invitation.id %}";
     const waitStatus = document.getElementById('invitation-wait-status');
     const cancelInvitationButton = document.getElementById('cancel-invitation');
+    let invitationPollingStopped = false;
 
     function getWaitCSRFToken() {
         const cookies = document.cookie.split(';');
@@ -43,32 +52,55 @@ Aguardando oponente
     }
 
     async function checkInvitationStatus() {
-        const response = await fetch(invitationStatusUrl);
-        const data = await response.json();
-
-        if (data.status === 'accepted' && data.game_url) {
-            window.location.href = data.game_url;
+        if (invitationPollingStopped) {
             return;
         }
 
-        if (data.status === 'rejected') {
-            waitStatus.innerText = 'O convite foi recusado.';
-            cancelInvitationButton.disabled = true;
-            return;
+        try {
+            const response = await fetch(invitationStatusUrl, {
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Nao foi possivel consultar o convite.');
+            }
+
+            const data = await response.json();
+
+            if (data.game_url) {
+                invitationPollingStopped = true;
+                window.location.assign(data.game_url);
+                return;
+            }
+
+            if (data.status === 'rejected') {
+                invitationPollingStopped = true;
+                waitStatus.innerText = 'O convite foi recusado.';
+                cancelInvitationButton.disabled = true;
+                return;
+            }
+
+            if (data.status === 'cancelled') {
+                invitationPollingStopped = true;
+                waitStatus.innerText = 'Solicitacao cancelada.';
+                cancelInvitationButton.disabled = true;
+                return;
+            }
+        } catch (error) {
+            console.error('Erro ao consultar convite:', error);
+            waitStatus.innerText = 'Ainda aguardando oponente...';
         }
 
-        if (data.status === 'cancelled') {
-            waitStatus.innerText = 'Solicitação cancelada.';
-            cancelInvitationButton.disabled = true;
-            return;
-        }
-
-        setTimeout(checkInvitationStatus, 2500);
+        setTimeout(checkInvitationStatus, 1500);
     }
 
     cancelInvitationButton.addEventListener('click', async function () {
+        invitationPollingStopped = true;
         cancelInvitationButton.disabled = true;
-        waitStatus.innerText = 'Cancelando solicitação...';
+        waitStatus.innerText = 'Cancelando solicitacao...';
 
         const response = await fetch(cancelInvitationUrl, {
             method: 'POST',
@@ -83,7 +115,9 @@ Aguardando oponente
             return;
         }
 
-        waitStatus.innerText = data.error || 'Não foi possível cancelar a solicitação.';
+        invitationPollingStopped = false;
+        setTimeout(checkInvitationStatus, 1500);
+        waitStatus.innerText = data.error || 'Nao foi possivel cancelar a solicitacao.';
     });
 
     checkInvitationStatus();

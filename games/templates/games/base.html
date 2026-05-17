@@ -7,7 +7,7 @@
 
     <title>{% block title %}Xadrez{% endblock %}</title>
 
-    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=15">
+    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=16">
 </head>
 
 <body>
@@ -107,6 +107,10 @@
                 text.innerText = invitation.opponent_mode === 'random'
                     ? `${invitation.creator} procura um oponente aleatório.`
                     : `${invitation.creator} convidou você para jogar.`;
+
+                text.innerText += invitation.time_control_minutes
+                    ? ` Tempo: ${invitation.time_control_minutes} min por jogador.`
+                    : ' Tempo: livre.';
 
                 const actions = document.createElement('div');
                 actions.className = 'notification-actions';

@@ -34,6 +34,20 @@ class ChessGameForm(forms.Form):
         widget=forms.RadioSelect,
     )
 
+    time_control_minutes = forms.IntegerField(
+        label='Tempo por jogador (minutos)',
+        required=False,
+        min_value=1,
+        max_value=5000,
+        widget=forms.NumberInput(attrs={
+            'class': 'time-control-input',
+            'placeholder': 'Livre',
+            'min': '1',
+            'max': '5000',
+            'step': '1',
+        }),
+    )
+
     def clean_opponent_name(self):
         return self.cleaned_data['opponent_name'].strip()
 
@@ -42,6 +56,11 @@ class ChessGameForm(forms.Form):
 
         if cleaned_data.get('opponent_mode') == 'choose' and not cleaned_data.get('opponent_name'):
             self.add_error('opponent_name', 'Informe o nome do oponente.')
+
+        time_control = cleaned_data.get('time_control_minutes')
+
+        if not time_control:
+            cleaned_data['time_control_minutes'] = None
 
         return cleaned_data
 
