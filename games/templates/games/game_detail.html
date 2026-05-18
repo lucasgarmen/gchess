@@ -94,6 +94,25 @@
             <button id="last-move">Última posição</button>
         </div>
 
+        <div class="game-actions">
+            <button id="offer-draw-button" type="button">Oferecer tablas</button>
+            <button id="resign-button" class="danger-button" type="button">Desistir</button>
+        </div>
+        <div id="resign-confirm-panel" class="draw-offer-panel resign-confirm-panel" hidden>
+            <p>Tem certeza de que deseja desistir da partida?</p>
+            <div class="draw-offer-actions">
+                <button id="confirm-resign-button" class="danger-button" type="button">Confirmar</button>
+                <button id="cancel-resign-button" type="button">Cancelar</button>
+            </div>
+        </div>
+        <div id="draw-offer-panel" class="draw-offer-panel" hidden>
+            <p id="draw-offer-text"></p>
+            <div id="draw-offer-actions" class="draw-offer-actions">
+                <button id="accept-draw-button" type="button">Aceitar</button>
+                <button id="reject-draw-button" type="button">Recusar</button>
+            </div>
+        </div>
+
         <ul id="move-list" style="display: none;"></ul>
         <pre id="pgn-box" class="pgn-box"></pre>
         <div id="captured-material" class="captured-material">
@@ -113,6 +132,7 @@
 
 {{ moves|json_script:"saved-moves-data" }}
 {{ clock|json_script:"game-clock-data" }}
+{{ draw_offer|json_script:"draw-offer-data" }}
 
 <script>
     const GAME_ID = "{{ game.id }}";
@@ -120,8 +140,9 @@
     const GAME_PLAYER_COLOR = "{{ player_color|default:'' }}";
     const MULTIPLAYER_MODE = {{ multiplayer_mode|yesno:"true,false" }};
     const GAME_CLOCK = JSON.parse(document.getElementById('game-clock-data').textContent);
+    const DRAW_OFFER = JSON.parse(document.getElementById('draw-offer-data').textContent);
 </script>
 
-<script src="{% static 'games/board.js' %}?v=39"></script>
+<script src="{% static 'games/board.js' %}?v=41"></script>
 
 {% endblock %}

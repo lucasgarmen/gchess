@@ -193,15 +193,37 @@ def serialize_clock(game):
     }
 
 
-def finish_game_by_timeout(game, loser):
-    winner = 'black' if loser == 'white' else 'white'
+def serialize_draw_offer(game, user):
+    player_color = player_color_for_game(game, user)
+
+    if not game.draw_offer_by_color or game.status == 'finished':
+        return {
+            'pending': False,
+            'by_color': '',
+            'can_accept': False,
+        }
+
+    return {
+        'pending': True,
+        'by_color': game.draw_offer_by_color,
+        'can_accept': bool(player_color and player_color != game.draw_offer_by_color),
+    }
+
+
+def finish_game(game, result):
     game.status = 'finished'
-    game.result = winner
+    game.result = result
     game.active_clock_color = ''
     game.clock_started_at = None
-    set_remaining_time_for(game, loser, 0)
-    game.save(update_fields=CLOCK_FIELDS)
+    game.draw_offer_by_color = ''
+    game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at', 'draw_offer_by_color', 'white_time_seconds', 'black_time_seconds'])
     apply_rating_after_game(game)
+
+
+def finish_game_by_timeout(game, loser):
+    winner = 'black' if loser == 'white' else 'white'
+    set_remaining_time_for(game, loser, 0)
+    finish_game(game, winner)
     return winner
 
 
@@ -471,6 +493,7 @@ def game_detail(request, game_id):
         'player_color': player_color,
         'multiplayer_mode': bool(game.white_user_id and game.black_user_id),
         'clock': serialize_clock(game),
+        'draw_offer': serialize_draw_offer(game, request.user),
     })
 
 @login_required   
@@ -550,6 +573,10 @@ def save_move(request, game_id):
     if chess_move not in board.legal_moves:
         return JsonResponse({'error': 'Jogada ilegal nessa posicao.'}, status=400)
 
+    draw_offer_declined_by_move = bool(
+        game.draw_offer_by_color and game.draw_offer_by_color != data.get('piece_color')
+    )
+
     move = Move.objects.create(
         game=game,
         move_number=data['move_number'],
@@ -567,6 +594,7 @@ def save_move(request, game_id):
         game.status = 'finished'
         game.active_clock_color = ''
         game.clock_started_at = None
+        game.draw_offer_by_color = ''
 
         if outcome.get('result') in ('white', 'black', 'draw'):
             game.result = outcome['result']
@@ -575,12 +603,21 @@ def save_move(request, game_id):
         elif data.get('result') == 'draw':
             game.result = 'draw'
 
-        game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at'])
+        game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at', 'draw_offer_by_color'])
         apply_rating_after_game(game)
     elif clock_enabled(game):
         game.active_clock_color = 'black' if expected_color == 'white' else 'white'
         game.clock_started_at = timezone.now()
-        game.save(update_fields=['active_clock_color', 'clock_started_at'])
+        update_fields = ['active_clock_color', 'clock_started_at']
+
+        if draw_offer_declined_by_move:
+            game.draw_offer_by_color = ''
+            update_fields.append('draw_offer_by_color')
+
+        game.save(update_fields=update_fields)
+    elif draw_offer_declined_by_move:
+        game.draw_offer_by_color = ''
+        game.save(update_fields=['draw_offer_by_color'])
 
     return JsonResponse({
         'status': 'ok',
@@ -590,6 +627,7 @@ def save_move(request, game_id):
         'winner': game.result if game.result in ('white', 'black') else None,
         'result': game.result if game.result in ('white', 'black', 'draw') else None,
         'draw_reason': outcome.get('reason'),
+        'draw_offer': serialize_draw_offer(game, request.user),
     })
 
 
@@ -626,13 +664,14 @@ def mark_finished(request, game_id):
     game.status = 'finished'
     game.active_clock_color = ''
     game.clock_started_at = None
+    game.draw_offer_by_color = ''
 
     if data.get('winner') in ('white', 'black'):
         game.result = data['winner']
     elif data.get('result') == 'draw':
         game.result = 'draw'
 
-    game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at'])
+    game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at', 'draw_offer_by_color'])
     apply_rating_after_game(game)
 
     return JsonResponse({
@@ -641,6 +680,105 @@ def mark_finished(request, game_id):
         'result': game.result,
         'game_finished': game.status == 'finished',
         'winner': game.result if game.result in ('white', 'black') else None,
+        'draw_offer': serialize_draw_offer(game, request.user),
+    })
+
+
+@login_required
+@require_POST
+def offer_draw(request, game_id):
+    touch_presence(request.user)
+    game = get_game_for_user(game_id, request.user)
+    player_color = player_color_for_game(game, request.user)
+
+    if game.status == 'finished':
+        return JsonResponse({'error': 'A partida ja terminou.'}, status=409)
+
+    if not player_color:
+        return JsonResponse({'error': 'Apenas jogadores da partida podem oferecer empate.'}, status=403)
+
+    if game.draw_offer_by_color and game.draw_offer_by_color != player_color:
+        finish_game(game, 'draw')
+        return JsonResponse({
+            'status': 'accepted',
+            'game_finished': True,
+            'result': 'draw',
+            'draw_offer': serialize_draw_offer(game, request.user),
+            'clock': serialize_clock(game),
+        })
+
+    game.draw_offer_by_color = player_color
+    game.save(update_fields=['draw_offer_by_color'])
+
+    return JsonResponse({
+        'status': 'offered',
+        'draw_offer': serialize_draw_offer(game, request.user),
+    })
+
+
+@login_required
+@require_POST
+def answer_draw_offer(request, game_id):
+    touch_presence(request.user)
+    game = get_game_for_user(game_id, request.user)
+    player_color = player_color_for_game(game, request.user)
+    data = json.loads(request.body or '{}')
+    accepted = bool(data.get('accepted'))
+
+    if game.status == 'finished':
+        return JsonResponse({'error': 'A partida ja terminou.'}, status=409)
+
+    if not player_color:
+        return JsonResponse({'error': 'Apenas jogadores da partida podem responder.'}, status=403)
+
+    if not game.draw_offer_by_color:
+        return JsonResponse({'error': 'Nao ha oferta de empate pendente.'}, status=409)
+
+    if game.draw_offer_by_color == player_color:
+        return JsonResponse({'error': 'Voce nao pode aceitar sua propria oferta.'}, status=403)
+
+    if accepted:
+        finish_game(game, 'draw')
+        return JsonResponse({
+            'status': 'accepted',
+            'game_finished': True,
+            'result': 'draw',
+            'draw_offer': serialize_draw_offer(game, request.user),
+            'clock': serialize_clock(game),
+        })
+
+    game.draw_offer_by_color = ''
+    game.save(update_fields=['draw_offer_by_color'])
+
+    return JsonResponse({
+        'status': 'rejected',
+        'draw_offer': serialize_draw_offer(game, request.user),
+    })
+
+
+@login_required
+@require_POST
+def resign_game(request, game_id):
+    touch_presence(request.user)
+    game = get_game_for_user(game_id, request.user)
+    player_color = player_color_for_game(game, request.user)
+
+    if game.status == 'finished':
+        return JsonResponse({'error': 'A partida ja terminou.'}, status=409)
+
+    if not player_color:
+        return JsonResponse({'error': 'Apenas jogadores da partida podem desistir.'}, status=403)
+
+    winner = 'black' if player_color == 'white' else 'white'
+    finish_game(game, winner)
+
+    return JsonResponse({
+        'status': 'resigned',
+        'game_finished': True,
+        'winner': winner,
+        'result': winner,
+        'draw_offer': serialize_draw_offer(game, request.user),
+        'clock': serialize_clock(game),
     })
 
 
@@ -807,6 +945,7 @@ def game_moves(request, game_id):
         'game_finished': game.status == 'finished',
         'winner': game.result if game.result in ('white', 'black') else None,
         'result': game.result if game.result in ('white', 'black', 'draw') else None,
+        'draw_offer': serialize_draw_offer(game, request.user),
     })
 
 import chess.pgn

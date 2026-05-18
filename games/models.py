@@ -39,6 +39,7 @@ class ChessGame(models.Model):
     black_time_seconds = models.PositiveIntegerField(blank=True, null=True)
     active_clock_color = models.CharField(max_length=10, blank=True)
     clock_started_at = models.DateTimeField(blank=True, null=True)
+    draw_offer_by_color = models.CharField(max_length=10, blank=True)
 
     def __str__(self):
         return self.title

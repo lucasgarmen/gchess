@@ -29,11 +29,17 @@ a:hover {
     background-color: #c92a2a;
     border-radius: 999px;
     color: white;
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
     margin-left: 4px;
-    min-width: 18px;
-    padding: 2px 5px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    width: auto;
 }
 
 .notification-panel {
@@ -509,6 +515,36 @@ button {
     margin-bottom: 14px;
 }
 
+.game-actions,
+.draw-offer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.game-actions button,
+.draw-offer-actions button {
+    flex: 1 1 auto;
+}
+
+.danger-button {
+    background: linear-gradient(180deg, #f08a7c, var(--danger));
+    color: #1a0e0c;
+}
+
+.draw-offer-panel {
+    background-color: rgba(240, 217, 181, 0.08);
+    border: 1px solid rgba(240, 217, 181, 0.18);
+    border-radius: 8px;
+    margin-bottom: 14px;
+    padding: 12px;
+}
+
+.draw-offer-panel p {
+    margin: 0 0 10px;
+}
+
 .history-controls button {
     flex: 1 1 auto;
 }
@@ -850,7 +886,7 @@ nav {
 }
 
 nav a,
-nav span {
+nav > span {
     margin-right: 0;
 }
 
@@ -867,9 +903,45 @@ nav a:hover {
     color: var(--accent-strong);
 }
 
-nav span {
+nav > span {
     color: var(--accent);
     margin-left: auto;
+}
+
+@media (max-width: 900px) {
+    nav {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    nav a,
+    nav > span,
+    nav form,
+    .notification-area {
+        display: block;
+        margin-left: 0;
+        margin-right: 0;
+        width: 100%;
+    }
+
+    nav > * + * {
+        border-top: 1px solid rgba(240, 217, 181, 0.18);
+        padding-top: 10px;
+    }
+
+    nav a,
+    nav button,
+    .notification-area > button {
+        justify-content: center;
+        text-align: center;
+        width: 100%;
+    }
+
+    .notification-panel {
+        left: 0;
+        right: 0;
+        min-width: 0;
+    }
 }
 
 h1 {
@@ -1153,7 +1225,7 @@ select:focus {
         align-items: stretch;
     }
 
-    nav span {
+    nav > span {
         margin-left: 0;
         width: 100%;
     }

@@ -18,6 +18,7 @@ let analysisGameState = null;
 let analysisPositions = [];
 let analysisPositionIndex = 0;
 let gameClock = typeof GAME_CLOCK !== 'undefined' ? GAME_CLOCK : null;
+let drawOffer = typeof DRAW_OFFER !== 'undefined' ? DRAW_OFFER : null;
 let timeoutSyncInProgress = false;
 
 const DRAG_PIECE_SCALE = 1.7;
@@ -42,6 +43,16 @@ const gameStatus = document.getElementById('game-status');
 const pgnBox = document.getElementById('pgn-box');
 const whiteClock = document.getElementById('white-clock');
 const blackClock = document.getElementById('black-clock');
+const offerDrawButton = document.getElementById('offer-draw-button');
+const resignButton = document.getElementById('resign-button');
+const resignConfirmPanel = document.getElementById('resign-confirm-panel');
+const confirmResignButton = document.getElementById('confirm-resign-button');
+const cancelResignButton = document.getElementById('cancel-resign-button');
+const drawOfferPanel = document.getElementById('draw-offer-panel');
+const drawOfferText = document.getElementById('draw-offer-text');
+const drawOfferActions = document.getElementById('draw-offer-actions');
+const acceptDrawButton = document.getElementById('accept-draw-button');
+const rejectDrawButton = document.getElementById('reject-draw-button');
 
 const initialPosition = {
     a8: { type: 'rook', color: 'black' },
@@ -1037,6 +1048,7 @@ renderSavedMoveList();
 loadPositionUntil(SAVED_MOVES.length);
 updateCapturedMaterial();
 renderClock();
+renderDrawOffer();
 
 if (clockIsEnabled()) {
     setInterval(renderClock, 1000);
@@ -1118,6 +1130,16 @@ function showServerGameResult(data) {
     }
 
     gameOver = true;
+    renderDrawOffer();
+    hideResignConfirmPanel();
+
+    if (offerDrawButton) {
+        offerDrawButton.disabled = true;
+    }
+
+    if (resignButton) {
+        resignButton.disabled = true;
+    }
 
     if (data.result === 'draw') {
         showGameStatus('Partida empatada');
@@ -1129,6 +1151,84 @@ function showServerGameResult(data) {
         showGameStatus(data.winner === 'white' ? 'Vitória das brancas' : 'Vitória das pretas');
         updateTurnIndicator();
     }
+}
+
+function applyDrawOfferState(offer) {
+    if (!offer) {
+        return;
+    }
+
+    drawOffer = offer;
+    renderDrawOffer();
+}
+
+function renderDrawOffer() {
+    if (!drawOfferPanel || !drawOfferText) {
+        return;
+    }
+
+    if (offerDrawButton) {
+        offerDrawButton.disabled = gameOver || Boolean(drawOffer && drawOffer.pending && !drawOffer.can_accept);
+    }
+
+    if (resignButton) {
+        resignButton.disabled = gameOver;
+    }
+
+    if (!drawOffer || !drawOffer.pending || gameOver) {
+        drawOfferPanel.hidden = true;
+        return;
+    }
+
+    drawOfferPanel.hidden = false;
+
+    if (drawOffer.can_accept) {
+        drawOfferText.innerText = 'Seu oponente ofereceu empate.';
+        if (drawOfferActions) {
+            drawOfferActions.hidden = false;
+        }
+    } else {
+        drawOfferText.innerText = 'Oferta de empate enviada. Aguardando resposta.';
+        if (drawOfferActions) {
+            drawOfferActions.hidden = true;
+        }
+    }
+}
+
+function showResignConfirmPanel() {
+    if (!resignConfirmPanel || gameOver) {
+        return;
+    }
+
+    resignConfirmPanel.hidden = false;
+}
+
+function hideResignConfirmPanel() {
+    if (resignConfirmPanel) {
+        resignConfirmPanel.hidden = true;
+    }
+}
+
+async function postGameAction(url, payload = {}) {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken(),
+        },
+        body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(data.error || 'A ação não pôde ser concluída.');
+    }
+
+    applyClockState(data.clock);
+    applyDrawOfferState(data.draw_offer);
+    showServerGameResult(data);
+
+    return data;
 }
 
 function renderClock() {
@@ -1851,6 +1951,7 @@ function saveMoveToDatabase(moveData, gameState = {}) {
     .then(data => {
         console.log('Movimento salvo:', data);
         applyClockState(data.clock);
+        applyDrawOfferState(data.draw_offer);
         showServerGameResult(data);
     })
     .catch(error => {
@@ -1885,6 +1986,7 @@ function syncFinishedGame(winner, options = {}) {
     .then(response => response.ok ? response.json() : Promise.reject(response))
     .then(data => {
         applyClockState(data.clock);
+        applyDrawOfferState(data.draw_offer);
         showServerGameResult(data);
     })
     .catch(error => {
@@ -2010,6 +2112,7 @@ async function syncMovesFromServer() {
 
         const data = await response.json();
         applyClockState(data.clock);
+        applyDrawOfferState(data.draw_offer);
         showServerGameResult(data);
 
         if (data.game_finished) {
@@ -2273,6 +2376,80 @@ if (toggleCoachButton) {
 const flipBoardButton = document.getElementById('flip-board');
 if (flipBoardButton) {
     flipBoardButton.addEventListener('click', flipBoard);
+}
+
+if (offerDrawButton) {
+    offerDrawButton.addEventListener('click', async function () {
+        offerDrawButton.disabled = true;
+
+        try {
+            await postGameAction(`/games/${GAME_ID}/offer-draw/`);
+        } catch (error) {
+            console.error('Erro ao oferecer empate:', error);
+        } finally {
+            offerDrawButton.disabled = gameOver;
+        }
+    });
+}
+
+if (acceptDrawButton) {
+    acceptDrawButton.addEventListener('click', async function () {
+        acceptDrawButton.disabled = true;
+
+        try {
+            await postGameAction(`/games/${GAME_ID}/answer-draw/`, { accepted: true });
+        } catch (error) {
+            console.error('Erro ao aceitar empate:', error);
+            acceptDrawButton.disabled = false;
+        }
+    });
+}
+
+if (rejectDrawButton) {
+    rejectDrawButton.addEventListener('click', async function () {
+        rejectDrawButton.disabled = true;
+
+        try {
+            await postGameAction(`/games/${GAME_ID}/answer-draw/`, { accepted: false });
+        } catch (error) {
+            console.error('Erro ao recusar empate:', error);
+        } finally {
+            rejectDrawButton.disabled = false;
+        }
+    });
+}
+
+if (resignButton) {
+    resignButton.addEventListener('click', function () {
+        showResignConfirmPanel();
+    });
+}
+
+if (cancelResignButton) {
+    cancelResignButton.addEventListener('click', function () {
+        hideResignConfirmPanel();
+    });
+}
+
+if (confirmResignButton) {
+    confirmResignButton.addEventListener('click', async function () {
+        confirmResignButton.disabled = true;
+
+        if (resignButton) {
+            resignButton.disabled = true;
+        }
+
+        try {
+            await postGameAction(`/games/${GAME_ID}/resign/`);
+            hideResignConfirmPanel();
+        } catch (error) {
+            console.error('Erro ao desistir:', error);
+            confirmResignButton.disabled = false;
+            if (resignButton) {
+                resignButton.disabled = false;
+            }
+        }
+    });
 }
 
 const analysisModeButton = document.getElementById('toggle-analysis-mode');
