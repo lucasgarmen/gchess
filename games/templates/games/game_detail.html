@@ -143,14 +143,24 @@
 {{ moves|json_script:"saved-moves-data" }}
 {{ clock|json_script:"game-clock-data" }}
 {{ draw_offer|json_script:"draw-offer-data" }}
+{{ multiplayer_mode|json_script:"multiplayer-mode-data" }}
 
 <script>
+    function parseJsonScript(scriptId, fallbackValue) {
+        const element = document.getElementById(scriptId);
+        if (!element) {
+            return fallbackValue;
+        }
+
+        return JSON.parse(element.textContent);
+    }
+
     const GAME_ID = "{{ game.id }}";
-    const SAVED_MOVES = JSON.parse(document.getElementById('saved-moves-data').textContent);
+    const SAVED_MOVES = parseJsonScript('saved-moves-data', []);
     const GAME_PLAYER_COLOR = "{{ player_color|default:'' }}";
-    const MULTIPLAYER_MODE = {{ multiplayer_mode|yesno:"true,false" }};
-    const GAME_CLOCK = JSON.parse(document.getElementById('game-clock-data').textContent);
-    const DRAW_OFFER = JSON.parse(document.getElementById('draw-offer-data').textContent);
+    const MULTIPLAYER_MODE = parseJsonScript('multiplayer-mode-data', false);
+    const GAME_CLOCK = parseJsonScript('game-clock-data', null);
+    const DRAW_OFFER = parseJsonScript('draw-offer-data', null);
     const UI_LANGUAGE = "{{ current_language }}";
 </script>
 

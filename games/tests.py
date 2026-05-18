@@ -1,6 +1,9 @@
 import chess
-from django.test import SimpleTestCase
+from django.contrib.auth.models import User
+from django.test import SimpleTestCase, TestCase
+from django.urls import reverse
 
+from .models import GameInvitation
 from .views import evaluate_board_outcome, read_analyzer_game, read_internal_coordinate_game
 
 
@@ -58,3 +61,23 @@ class DrawOutcomeTests(SimpleTestCase):
             board.push(chess.Move.from_uci(move))
 
         self.assertEqual(evaluate_board_outcome(board)["reason"], "threefold_repetition")
+
+
+class InvitationLinkTests(TestCase):
+    def test_accepts_link_invitation_and_redirects_to_game(self):
+        creator = User.objects.create_user(username="creator", password="pass")
+        opponent = User.objects.create_user(username="opponent", password="pass")
+        invitation = GameInvitation.objects.create(
+            creator=creator,
+            opponent_mode="link",
+            creator_color="white",
+        )
+
+        self.client.force_login(opponent)
+        response = self.client.get(reverse("accept_invitation_link", args=[invitation.token]))
+
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.status, "accepted")
+        self.assertEqual(invitation.opponent, opponent)
+        self.assertIsNotNone(invitation.game)
+        self.assertRedirects(response, reverse("game_detail", args=[invitation.game_id]))

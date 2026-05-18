@@ -1071,7 +1071,7 @@ def accept_invitation_link(request, token):
         if accepted_count == 0:
             return redirect('games_list')
 
-        invitation = GameInvitation.objects.select_related('creator', 'opponent').get(id=invitation_id)
+        invitation = GameInvitation.objects.select_related('creator', 'opponent').get(id=invitation.id)
         game = create_game_from_invitation(invitation, request.user)
         invitation.game = game
         invitation.save(update_fields=['game'])
