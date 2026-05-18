@@ -53,6 +53,17 @@ const drawOfferText = document.getElementById('draw-offer-text');
 const drawOfferActions = document.getElementById('draw-offer-actions');
 const acceptDrawButton = document.getElementById('accept-draw-button');
 const rejectDrawButton = document.getElementById('reject-draw-button');
+const gameChatToggle = document.getElementById('game-chat-toggle');
+const gameChatCount = document.getElementById('game-chat-count');
+const gameChatPanel = document.getElementById('game-chat-panel');
+const gameChatMessages = document.getElementById('game-chat-messages');
+const gameChatForm = document.getElementById('game-chat-form');
+const gameChatInput = document.getElementById('game-chat-input');
+const gameChatClose = document.getElementById('game-chat-close');
+const gameChatEmojiToggle = document.getElementById('game-chat-emoji-toggle');
+const gameChatEmojiPanel = document.getElementById('game-chat-emoji-panel');
+let gameChatOpen = false;
+let gameChatLoading = false;
 
 const initialPosition = {
     a8: { type: 'rook', color: 'black' },
@@ -1058,6 +1069,11 @@ if (isMultiplayerMode()) {
     setInterval(syncMovesFromServer, 1500);
 }
 
+if (gameChatToggle && GAME_ID) {
+    fetchGameChat();
+    setInterval(fetchGameChat, 3000);
+}
+
 function clockIsEnabled() {
     return Boolean(gameClock && gameClock.enabled);
 }
@@ -1229,6 +1245,120 @@ async function postGameAction(url, payload = {}) {
     showServerGameResult(data);
 
     return data;
+}
+
+function renderGameChat(data) {
+    if (!gameChatMessages || !gameChatCount) {
+        return;
+    }
+
+    gameChatMessages.replaceChildren();
+
+    if (!data.messages || data.messages.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'game-chat-empty';
+        empty.innerText = 'Nenhuma mensagem ainda.';
+        gameChatMessages.appendChild(empty);
+    } else {
+        data.messages.forEach(function (message) {
+            const item = document.createElement('div');
+            item.className = message.mine ? 'game-chat-message game-chat-message-mine' : 'game-chat-message';
+
+            const meta = document.createElement('span');
+            meta.className = 'game-chat-meta';
+            meta.innerText = `${message.sender} · ${message.created_at}`;
+
+            const text = document.createElement('p');
+            text.innerText = message.text;
+
+            item.append(meta, text);
+            gameChatMessages.appendChild(item);
+        });
+    }
+
+    gameChatMessages.scrollTop = gameChatMessages.scrollHeight;
+
+    const unreadCount = data.unread_count || 0;
+    gameChatCount.innerText = unreadCount;
+    gameChatCount.hidden = gameChatOpen || unreadCount === 0;
+}
+
+async function fetchGameChat() {
+    if (!GAME_ID || gameChatLoading) {
+        return;
+    }
+
+    gameChatLoading = true;
+
+    try {
+        const markRead = gameChatOpen ? '?mark_read=1' : '';
+        const response = await fetch(`/games/${GAME_ID}/chat/${markRead}`, {
+            cache: 'no-store',
+            headers: {
+                'Cache-Control': 'no-cache',
+            },
+        });
+
+        if (!response.ok) {
+            return;
+        }
+
+        const data = await response.json();
+        renderGameChat(data);
+    } catch (error) {
+        console.error('Erro ao buscar chat:', error);
+    } finally {
+        gameChatLoading = false;
+    }
+}
+
+function toggleGameChat() {
+    if (!gameChatPanel) {
+        return;
+    }
+
+    gameChatOpen = !gameChatOpen;
+    gameChatPanel.hidden = !gameChatOpen;
+
+    if (!gameChatOpen && gameChatEmojiPanel) {
+        gameChatEmojiPanel.hidden = true;
+    }
+
+    if (gameChatOpen) {
+        fetchGameChat();
+        if (gameChatInput) {
+            gameChatInput.focus();
+        }
+    }
+}
+
+function closeGameChat() {
+    if (!gameChatPanel) {
+        return;
+    }
+
+    gameChatOpen = false;
+    gameChatPanel.hidden = true;
+
+    if (gameChatEmojiPanel) {
+        gameChatEmojiPanel.hidden = true;
+    }
+}
+
+function insertGameChatEmoji(emoji) {
+    if (!gameChatInput) {
+        return;
+    }
+
+    const start = gameChatInput.selectionStart || gameChatInput.value.length;
+    const end = gameChatInput.selectionEnd || gameChatInput.value.length;
+    const before = gameChatInput.value.slice(0, start);
+    const after = gameChatInput.value.slice(end);
+
+    gameChatInput.value = `${before}${emoji}${after}`;
+    gameChatInput.focus();
+    gameChatInput.selectionStart = start + emoji.length;
+    gameChatInput.selectionEnd = start + emoji.length;
 }
 
 function renderClock() {
@@ -2448,6 +2578,61 @@ if (confirmResignButton) {
             if (resignButton) {
                 resignButton.disabled = false;
             }
+        }
+    });
+}
+
+if (gameChatToggle) {
+    gameChatToggle.addEventListener('click', toggleGameChat);
+}
+
+if (gameChatClose) {
+    gameChatClose.addEventListener('click', closeGameChat);
+}
+
+if (gameChatEmojiToggle && gameChatEmojiPanel) {
+    gameChatEmojiToggle.addEventListener('click', function () {
+        gameChatEmojiPanel.hidden = !gameChatEmojiPanel.hidden;
+    });
+
+    gameChatEmojiPanel.querySelectorAll('button').forEach(function (button) {
+        button.addEventListener('click', function () {
+            insertGameChatEmoji(button.innerText);
+            gameChatEmojiPanel.hidden = true;
+        });
+    });
+}
+
+if (gameChatForm) {
+    gameChatForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+
+        const text = gameChatInput ? gameChatInput.value.trim() : '';
+
+        if (!text || !GAME_ID) {
+            return;
+        }
+
+        gameChatInput.value = '';
+
+        try {
+            const response = await fetch(`/games/${GAME_ID}/chat/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken(),
+                },
+                body: JSON.stringify({ text }),
+            });
+
+            if (!response.ok) {
+                return;
+            }
+
+            const data = await response.json();
+            renderGameChat(data);
+        } catch (error) {
+            console.error('Erro ao enviar mensagem:', error);
         }
     });
 }

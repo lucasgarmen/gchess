@@ -101,3 +101,29 @@ class GameInvitation(models.Model):
 
     def __str__(self):
         return f"Convite de {self.creator.username}"
+
+
+class GameChatMessage(models.Model):
+    game = models.ForeignKey(ChessGame, on_delete=models.CASCADE, related_name='chat_messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_game_chat_messages')
+    text = models.CharField(max_length=500)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+
+    def __str__(self):
+        return f"{self.sender.username}: {self.text[:40]}"
+
+
+class GameChatRead(models.Model):
+    game = models.ForeignKey(ChessGame, on_delete=models.CASCADE, related_name='chat_reads')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='game_chat_reads')
+    last_read_message = models.ForeignKey(GameChatMessage, on_delete=models.SET_NULL, blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [('game', 'user')]
+
+    def __str__(self):
+        return f"{self.user.username} leu chat da partida {self.game_id}"

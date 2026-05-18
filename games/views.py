@@ -15,9 +15,9 @@ import re
 from django.http import JsonResponse
 from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from accounts.models import PlayerProfile
-from .models import ChessGame, GameInvitation, Move, UserPresence
+from .models import ChessGame, GameChatMessage, GameChatRead, GameInvitation, Move, UserPresence
 
 PROMOTION_PIECES = {
     'queen': 'q',
@@ -35,6 +35,7 @@ MAX_JSON_BODY_BYTES = 24 * 1024
 MAX_ENGINE_MOVES = 300
 MAX_PGN_BYTES = 80 * 1024
 MAX_TRAINER_QUESTION_CHARS = 500
+MAX_CHAT_MESSAGE_CHARS = 500
 
 
 def rate_limit(limit, window_seconds, key_prefix):
@@ -1104,6 +1105,68 @@ def game_moves(request, game_id):
         'winner': game.result if game.result in ('white', 'black') else None,
         'result': game.result if game.result in ('white', 'black', 'draw') else None,
         'draw_offer': serialize_draw_offer(game, request.user),
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+@rate_limit(120, 60, 'game-chat')
+def game_chat(request, game_id):
+    touch_presence(request.user)
+    game = get_game_for_user(game_id, request.user)
+
+    if not player_color_for_game(game, request.user):
+        return JsonResponse({'error': 'Apenas jogadores da partida podem usar o chat.'}, status=403)
+
+    if request.method == 'POST':
+        try:
+            data = parse_json_body(request)
+        except ValueError as exc:
+            return JsonResponse({'error': str(exc)}, status=400)
+
+        text = (data.get('text') or '').strip()
+
+        if not text:
+            return JsonResponse({'error': 'Digite uma mensagem.'}, status=400)
+
+        if len(text) > MAX_CHAT_MESSAGE_CHARS:
+            return JsonResponse({'error': 'Mensagem muito longa.'}, status=400)
+
+        GameChatMessage.objects.create(
+            game=game,
+            sender=request.user,
+            text=text,
+        )
+
+    messages = list(
+        GameChatMessage.objects.filter(game=game)
+        .select_related('sender')
+        .order_by('created_at', 'id')[:100]
+    )
+    latest_message = messages[-1] if messages else None
+    read_state, _ = GameChatRead.objects.get_or_create(game=game, user=request.user)
+
+    if request.GET.get('mark_read') == '1' and latest_message:
+        read_state.last_read_message = latest_message
+        read_state.save(update_fields=['last_read_message', 'updated_at'])
+
+    unread_query = GameChatMessage.objects.filter(game=game).exclude(sender=request.user)
+
+    if read_state.last_read_message_id:
+        unread_query = unread_query.filter(id__gt=read_state.last_read_message_id)
+
+    return JsonResponse({
+        'messages': [
+            {
+                'id': message.id,
+                'sender': message.sender.username,
+                'mine': message.sender_id == request.user.id,
+                'text': message.text,
+                'created_at': timezone.localtime(message.created_at).strftime('%H:%M'),
+            }
+            for message in messages
+        ],
+        'unread_count': unread_query.count(),
     })
 
 import chess.pgn

@@ -122,6 +122,35 @@
                 <span id="black-material-advantage" class="material-advantage"></span>
             </div>
         </div>
+
+        <button id="game-chat-toggle" class="game-chat-toggle" type="button">
+            Chat <span id="game-chat-count" hidden>0</span>
+        </button>
+        <div id="game-chat-panel" class="game-chat-panel" hidden>
+            <button id="game-chat-close" class="game-chat-close" type="button" aria-label="Fechar chat">×</button>
+            <div id="game-chat-messages" class="game-chat-messages"></div>
+            <form id="game-chat-form" class="game-chat-form">
+                <div class="game-chat-input-wrap">
+                    <input id="game-chat-input" type="text" maxlength="500" autocomplete="off" placeholder="Mensagem">
+                    <button id="game-chat-emoji-toggle" class="game-chat-emoji-toggle" type="button" aria-label="Emojis">☺</button>
+                    <div id="game-chat-emoji-panel" class="game-chat-emoji-panel" hidden>
+                        <button type="button">😀</button>
+                        <button type="button">😂</button>
+                        <button type="button">😅</button>
+                        <button type="button">👏</button>
+                        <button type="button">👍</button>
+                        <button type="button">🤝</button>
+                        <button type="button">🔥</button>
+                        <button type="button">♟️</button>
+                        <button type="button">🏆</button>
+                        <button type="button">😎</button>
+                        <button type="button">😬</button>
+                        <button type="button">🤔</button>
+                    </div>
+                </div>
+                <button type="submit">Enviar</button>
+            </form>
+        </div>
     </aside>
 </main>
 
@@ -140,6 +169,6 @@
     const DRAW_OFFER = JSON.parse(document.getElementById('draw-offer-data').textContent);
 </script>
 
-<script src="{% static 'games/board.js' %}?v=41"></script>
+<script src="{% static 'games/board.js' %}?v=42"></script>
 
 {% endblock %}
