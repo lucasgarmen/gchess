@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 
 from .models import ChessGame
+from .i18n import t
 
 
 ONLINE_SECONDS = 60
@@ -48,6 +49,19 @@ class ChessGameForm(forms.Form):
             'step': '1',
         }),
     )
+
+    def __init__(self, *args, language='pt', **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['opponent_mode'].choices = [
+            ('random', t(language, 'random_opponent')),
+            ('choose', t(language, 'choose_opponent')),
+            ('link', t(language, 'send_link')),
+        ]
+        self.fields['color_choice'].choices = [
+            ('white', t(language, 'white')),
+            ('black', t(language, 'black')),
+            ('random', t(language, 'random_color')),
+        ]
 
     def clean_opponent_name(self):
         return self.cleaned_data['opponent_name'].strip()

@@ -23,6 +23,14 @@ let timeoutSyncInProgress = false;
 
 const DRAG_PIECE_SCALE = 1.7;
 
+function uiText(key, fallback) {
+    if (typeof UI_TEXTS !== 'undefined' && UI_TEXTS[key]) {
+        return UI_TEXTS[key];
+    }
+
+    return fallback;
+}
+
 let castlingRights = {
     white: {
         kingMoved: false,
@@ -180,7 +188,7 @@ function canPlayerMoveFrom(square) {
 
 function updateTurnIndicator() {
     if (analysisMode) {
-        turnIndicator.innerText = 'Modo análisis: pruebas temporarias';
+        turnIndicator.innerText = uiText('analysis_mode_testing', 'Modo análisis: pruebas temporarias');
         return;
     }
 
@@ -196,8 +204,8 @@ function updateTurnIndicator() {
 
     if (isViewingLatestPosition()) {
         turnIndicator.innerText = currentTurn === 'white'
-            ? 'Vez das brancas'
-            : 'Vez das pretas';
+            ? uiText('turn_white', 'Vez das brancas')
+            : uiText('turn_black', 'Vez das pretas');
     } else {
         turnIndicator.innerText = `Vendo jogada ${historyIndex} de ${SAVED_MOVES.length}`;
     }
@@ -409,7 +417,9 @@ function updateHistoryControls() {
 
     const toggleCoachButton = document.getElementById('toggle-coach');
     if (toggleCoachButton) {
-        toggleCoachButton.innerText = coachEnabled ? 'Desabilitar treinador' : 'Habilitar treinador';
+        toggleCoachButton.innerText = coachEnabled
+            ? uiText('disable_coach', 'Desabilitar treinador')
+            : uiText('enable_coach', 'Habilitar treinador');
     }
 
     const playerColorSelect = document.getElementById('player-color');
@@ -419,7 +429,9 @@ function updateHistoryControls() {
 
     const analysisModeButton = document.getElementById('toggle-analysis-mode');
     if (analysisModeButton) {
-        analysisModeButton.innerText = analysisMode ? 'Salir análisis' : 'Modo análisis';
+        analysisModeButton.innerText = analysisMode
+            ? uiText('exit_analysis_mode', 'Salir análisis')
+            : uiText('analysis_mode', 'Modo análisis');
         analysisModeButton.classList.toggle('active', analysisMode);
     }
 
@@ -1131,9 +1143,9 @@ function applyClockState(clock) {
         finishedGameSynced = true;
 
         if (clock.result === 'white' || clock.result === 'black') {
-            showGameStatus(clock.result === 'white' ? 'Vitória das brancas' : 'Vitória das pretas');
+            showGameStatus(clock.result === 'white' ? uiText('white_wins', 'Vitória das brancas') : uiText('black_wins', 'Vitória das pretas'));
         } else if (clock.result === 'draw') {
-            showGameStatus('Partida empatada');
+            showGameStatus(uiText('game_drawn', 'Partida empatada'));
         }
     }
 
@@ -1158,13 +1170,13 @@ function showServerGameResult(data) {
     }
 
     if (data.result === 'draw') {
-        showGameStatus('Partida empatada');
+        showGameStatus(uiText('game_drawn', 'Partida empatada'));
         updateTurnIndicator();
         return;
     }
 
     if (data.winner === 'white' || data.winner === 'black') {
-        showGameStatus(data.winner === 'white' ? 'Vitória das brancas' : 'Vitória das pretas');
+        showGameStatus(data.winner === 'white' ? uiText('white_wins', 'Vitória das brancas') : uiText('black_wins', 'Vitória das pretas'));
         updateTurnIndicator();
     }
 }
@@ -1199,12 +1211,12 @@ function renderDrawOffer() {
     drawOfferPanel.hidden = false;
 
     if (drawOffer.can_accept) {
-        drawOfferText.innerText = 'Seu oponente ofereceu empate.';
+        drawOfferText.innerText = uiText('draw_offer_received', 'Seu oponente ofereceu empate.');
         if (drawOfferActions) {
             drawOfferActions.hidden = false;
         }
     } else {
-        drawOfferText.innerText = 'Oferta de empate enviada. Aguardando resposta.';
+        drawOfferText.innerText = uiText('draw_offer_sent', 'Oferta de empate enviada. Aguardando resposta.');
         if (drawOfferActions) {
             drawOfferActions.hidden = true;
         }
@@ -1257,7 +1269,7 @@ function renderGameChat(data) {
     if (!data.messages || data.messages.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'game-chat-empty';
-        empty.innerText = 'Nenhuma mensagem ainda.';
+        empty.innerText = uiText('no_chat_messages', 'Nenhuma mensagem ainda.');
         gameChatMessages.appendChild(empty);
     } else {
         data.messages.forEach(function (message) {
@@ -2249,7 +2261,7 @@ async function syncMovesFromServer() {
             gameOver = true;
 
             if (data.winner === 'white' || data.winner === 'black') {
-                showGameStatus(data.winner === 'white' ? 'Vitória das brancas' : 'Vitória das pretas');
+                showGameStatus(data.winner === 'white' ? uiText('white_wins', 'Vitória das brancas') : uiText('black_wins', 'Vitória das pretas'));
             }
         }
 
@@ -2314,7 +2326,7 @@ function undoComputerMove() {
     const movesToRemove = SAVED_MOVES.length % 2 === 0 ? 2 : 1;
     SAVED_MOVES.splice(Math.max(0, SAVED_MOVES.length - movesToRemove), movesToRemove);
     gameOver = false;
-    setCoachComment(coachEnabled ? 'Treinador habilitado. Vou comentar suas jogadas.' : '');
+    setCoachComment(coachEnabled ? uiText('coach_enabled', 'Treinador habilitado. Vou comentar suas jogadas.') : '');
     loadPositionUntil(SAVED_MOVES.length);
     renderSavedMoveList();
     enableComputerEloSelect();
@@ -2351,7 +2363,7 @@ function toggleCoach() {
     updateHistoryControls();
 
     if (coachEnabled) {
-        setCoachComment('Treinador habilitado. Vou comentar suas jogadas.');
+        setCoachComment(uiText('coach_enabled', 'Treinador habilitado. Vou comentar suas jogadas.'));
     } else {
         setCoachComment('');
     }
@@ -2388,7 +2400,7 @@ function updateTrainerChatControls() {
 
     if (submitButton) {
         submitButton.disabled = trainerChatThinking;
-        submitButton.innerText = trainerChatThinking ? 'Pensando...' : 'Perguntar';
+        submitButton.innerText = trainerChatThinking ? uiText('thinking', 'Pensando...') : uiText('ask', 'Perguntar');
     }
 
     if (input) {
@@ -2420,6 +2432,7 @@ async function askTrainerChat(question) {
                 question: question,
                 moves: trainerChatMoves(),
                 player_color: playerColor(),
+                language: typeof UI_LANGUAGE !== 'undefined' ? UI_LANGUAGE : 'pt',
             }),
         });
 
@@ -2427,14 +2440,14 @@ async function askTrainerChat(question) {
 
         if (!response.ok || data.error) {
             console.error('Erro do chat do treinador:', data.error || response.statusText);
-            addTrainerChatMessage('Não consegui responder agora. Tente perguntar de outro jeito.', 'trainer');
+            addTrainerChatMessage(uiText('trainer_error', 'O treinador não conseguiu responder agora.'), 'trainer');
             return;
         }
 
         addTrainerChatMessage(data.answer, 'trainer');
     } catch (error) {
         console.error('Erro ao perguntar ao treinador:', error);
-        addTrainerChatMessage('Não consegui responder agora. Tente novamente em instantes.', 'trainer');
+        addTrainerChatMessage(uiText('trainer_error', 'O treinador não conseguiu responder agora.'), 'trainer');
     } finally {
         trainerChatThinking = false;
         updateTrainerChatControls();
@@ -2442,7 +2455,7 @@ async function askTrainerChat(question) {
 }
 
 async function requestCoachAnalysis() {
-    setCoachComment('Treinador analisando...');
+    setCoachComment(uiText('trainer_analyzing', 'Treinador analisando...'));
 
     try {
         const response = await fetch('/coach-analysis/', {
@@ -2454,6 +2467,7 @@ async function requestCoachAnalysis() {
             body: JSON.stringify({
                 moves: SAVED_MOVES,
                 player_color: playerColor(),
+                language: typeof UI_LANGUAGE !== 'undefined' ? UI_LANGUAGE : 'pt',
             }),
         });
 
@@ -2461,14 +2475,14 @@ async function requestCoachAnalysis() {
 
         if (!response.ok || analysis.error) {
             console.error('Erro do treinador:', analysis.error || response.statusText);
-            setCoachComment('O treinador não conseguiu analisar esta jogada.');
+            setCoachComment(uiText('trainer_error', 'O treinador não conseguiu responder agora.'));
             return;
         }
 
         setCoachComment(analysis.comment || '');
     } catch (error) {
         console.error('Erro ao pedir análise do treinador:', error);
-        setCoachComment('O treinador não conseguiu analisar esta jogada.');
+        setCoachComment(uiText('trainer_error', 'O treinador não conseguiu responder agora.'));
     }
 }
 

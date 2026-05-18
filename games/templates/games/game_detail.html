@@ -1,68 +1,52 @@
 {% extends 'games/base.html' %}
 {% load static %}
+{% load game_i18n %}
 
 {% block title %}
-{{ game.title|default:"Partida" }}
+{{ game.title|default:"GChess" }}
 {% endblock %}
 
 {% block content %}
 
 {% if game.title %}
-<h1>
-    {{ game.title }}
-</h1>
+<h1>{{ game.title }}</h1>
 {% endif %}
 
 <main class="game-layout online-game-layout">
     <aside class="card game-info-card">
         <div class="game-info-item">
-            <strong>Brancas:</strong>
+            <strong>{% tr "white" %}:</strong>
             <span>"{{ game.white_player }}"</span>
         </div>
         <div class="game-info-item">
-            <strong>Pretas:</strong>
+            <strong>{% tr "black" %}:</strong>
             <span>"{{ game.black_player }}"</span>
         </div>
         <div class="game-info-item">
-            <strong>Criada em:</strong>
+            <strong>{% tr "created_at" %}</strong>
             <span>{{ game.created_at|date:"d/m/Y h:i A" }}</span>
         </div>
     </aside>
 
     <section class="board-area">
-
-
-
         <div class="board-wrapper">
             <div class="rank-labels">
-                <span>8</span>
-                <span>7</span>
-                <span>6</span>
-                <span>5</span>
-                <span>4</span>
-                <span>3</span>
-                <span>2</span>
-                <span>1</span>
+                <span>8</span><span>7</span><span>6</span><span>5</span>
+                <span>4</span><span>3</span><span>2</span><span>1</span>
             </div>
 
             <div>
                 <div class="board-toolbar">
-                    <button id="analysis-prev" class="icon-button analysis-nav-button" type="button" title="Retroceder análisis" aria-label="Retroceder análisis" hidden>&lt;</button>
-                    <button id="analysis-next" class="icon-button analysis-nav-button" type="button" title="Avanzar análisis" aria-label="Avanzar análisis" hidden>&gt;</button>
-                    <button id="toggle-analysis-mode" class="analysis-mode-button" type="button">Modo análisis</button>
-                    <button id="flip-board" class="icon-button" type="button" title="Girar tablero" aria-label="Girar tablero">↻</button>
+                    <button id="analysis-prev" class="icon-button analysis-nav-button" type="button" title="{% tr "previous" %}" aria-label="{% tr "previous" %}" hidden>&lt;</button>
+                    <button id="analysis-next" class="icon-button analysis-nav-button" type="button" title="{% tr "next" %}" aria-label="{% tr "next" %}" hidden>&gt;</button>
+                    <button id="toggle-analysis-mode" class="analysis-mode-button" type="button">{% tr "analysis_mode" %}</button>
+                    <button id="flip-board" class="icon-button" type="button" title="{% tr "flip_board" %}" aria-label="{% tr "flip_board" %}">↻</button>
                 </div>
                 <div id="board" class="board"></div>
 
                 <div class="file-labels">
-                    <span>a</span>
-                    <span>b</span>
-                    <span>c</span>
-                    <span>d</span>
-                    <span>e</span>
-                    <span>f</span>
-                    <span>g</span>
-                    <span>h</span>
+                    <span>a</span><span>b</span><span>c</span><span>d</span>
+                    <span>e</span><span>f</span><span>g</span><span>h</span>
                 </div>
             </div>
         </div>
@@ -70,43 +54,43 @@
 
     <aside class="pgn-panel">
         <h2>PGN</h2>
-        <p id="turn-indicator">Vez das brancas</p>
+        <p id="turn-indicator">{% tr "turn_white" %}</p>
         <p id="game-status" class="game-status" hidden></p>
         {% if clock %}
         <div id="game-clock" class="game-clock">
             <div class="clock-row" data-clock-color="white">
-                <span>Brancas</span>
+                <span>{% tr "white" %}</span>
                 <strong id="white-clock">--:--</strong>
             </div>
             <div class="clock-row" data-clock-color="black">
-                <span>Pretas</span>
+                <span>{% tr "black" %}</span>
                 <strong id="black-clock">--:--</strong>
             </div>
         </div>
         {% endif %}
 
         <div class="history-controls">
-            <button id="prev-move">Anterior</button>
-            <button id="next-move">Próxima</button>
-            <button id="last-move">Última posição</button>
+            <button id="prev-move">{% tr "previous" %}</button>
+            <button id="next-move">{% tr "next" %}</button>
+            <button id="last-move">{% tr "last_position" %}</button>
         </div>
 
         <div class="game-actions">
-            <button id="offer-draw-button" type="button">Oferecer tablas</button>
-            <button id="resign-button" class="danger-button" type="button">Desistir</button>
+            <button id="offer-draw-button" type="button">{% tr "offer_draw" %}</button>
+            <button id="resign-button" class="danger-button" type="button">{% tr "resign" %}</button>
         </div>
         <div id="resign-confirm-panel" class="draw-offer-panel resign-confirm-panel" hidden>
-            <p>Tem certeza de que deseja desistir da partida?</p>
+            <p>{% tr "confirm_resign" %}</p>
             <div class="draw-offer-actions">
-                <button id="confirm-resign-button" class="danger-button" type="button">Confirmar</button>
-                <button id="cancel-resign-button" type="button">Cancelar</button>
+                <button id="confirm-resign-button" class="danger-button" type="button">{% tr "confirm" %}</button>
+                <button id="cancel-resign-button" type="button">{% tr "cancel" %}</button>
             </div>
         </div>
         <div id="draw-offer-panel" class="draw-offer-panel" hidden>
             <p id="draw-offer-text"></p>
             <div id="draw-offer-actions" class="draw-offer-actions">
-                <button id="accept-draw-button" type="button">Aceitar</button>
-                <button id="reject-draw-button" type="button">Recusar</button>
+                <button id="accept-draw-button" type="button">{% tr "accept" %}</button>
+                <button id="reject-draw-button" type="button">{% tr "reject" %}</button>
             </div>
         </div>
 
@@ -124,14 +108,14 @@
         </div>
 
         <button id="game-chat-toggle" class="game-chat-toggle" type="button">
-            Chat <span id="game-chat-count" hidden>0</span>
+            {% tr "chat" %} <span id="game-chat-count" hidden>0</span>
         </button>
         <div id="game-chat-panel" class="game-chat-panel" hidden>
-            <button id="game-chat-close" class="game-chat-close" type="button" aria-label="Fechar chat">×</button>
+            <button id="game-chat-close" class="game-chat-close" type="button" aria-label="{% tr "cancel" %}">×</button>
             <div id="game-chat-messages" class="game-chat-messages"></div>
             <form id="game-chat-form" class="game-chat-form">
                 <div class="game-chat-input-wrap">
-                    <input id="game-chat-input" type="text" maxlength="500" autocomplete="off" placeholder="Mensagem">
+                    <input id="game-chat-input" type="text" maxlength="500" autocomplete="off" placeholder="{% tr "message" %}">
                     <button id="game-chat-emoji-toggle" class="game-chat-emoji-toggle" type="button" aria-label="Emojis">☺</button>
                     <div id="game-chat-emoji-panel" class="game-chat-emoji-panel" hidden>
                         <button type="button">😀</button>
@@ -148,13 +132,13 @@
                         <button type="button">🤔</button>
                     </div>
                 </div>
-                <button type="submit">Enviar</button>
+                <button type="submit">{% tr "send" %}</button>
             </form>
         </div>
     </aside>
 </main>
 
-<a href="{% url 'games_list' %}">Voltar para partidas</a>
+<a href="{% url 'games_list' %}">{% tr "back_to_games" %}</a>
 
 {{ moves|json_script:"saved-moves-data" }}
 {{ clock|json_script:"game-clock-data" }}
@@ -167,8 +151,9 @@
     const MULTIPLAYER_MODE = {{ multiplayer_mode|yesno:"true,false" }};
     const GAME_CLOCK = JSON.parse(document.getElementById('game-clock-data').textContent);
     const DRAW_OFFER = JSON.parse(document.getElementById('draw-offer-data').textContent);
+    const UI_LANGUAGE = "{{ current_language }}";
 </script>
 
-<script src="{% static 'games/board.js' %}?v=42"></script>
+<script src="{% static 'games/board.js' %}?v=43"></script>
 
 {% endblock %}

@@ -1,7 +1,8 @@
 {% extends 'games/base.html' %}
+{% load game_i18n %}
 
 {% block title %}
-Entrar
+{% tr "login" %}
 {% endblock %}
 
 {% block content %}
@@ -10,7 +11,7 @@ Entrar
     <form method="POST" class="form-card auth-card" novalidate>
         {% csrf_token %}
 
-        <h1>Entrar</h1>
+        <h1>{% tr "login" %}</h1>
 
         {% if form.non_field_errors %}
             <div class="form-errors">
@@ -19,7 +20,7 @@ Entrar
         {% endif %}
 
         <div class="form-field">
-            <label for="{{ form.username.id_for_label }}">Usuário</label>
+            <label for="{{ form.username.id_for_label }}">{% tr "username" %}</label>
             {{ form.username }}
             {% for error in form.username.errors %}
                 <p class="field-error">{{ error }}</p>
@@ -27,7 +28,7 @@ Entrar
         </div>
 
         <div class="form-field">
-            <label for="{{ form.password.id_for_label }}">Senha</label>
+            <label for="{{ form.password.id_for_label }}">{% tr "password" %}</label>
             {{ form.password }}
             {% for error in form.password.errors %}
                 <p class="field-error">{{ error }}</p>
@@ -36,14 +37,14 @@ Entrar
 
         <label class="password-toggle">
             <input type="checkbox" id="show-login-password">
-            Mostrar senha
+            {% tr "show_password" %}
         </label>
 
-        <button type="submit">Entrar</button>
+        <button type="submit">{% tr "login" %}</button>
 
         <p class="auth-switch">
-            Ainda não tem conta?
-            <a href="{% url 'register' %}">Criar conta</a>
+            {% tr "no_account" %}
+            <a href="{% url 'register' %}">{% tr "register" %}</a>
         </p>
     </form>
 </main>

@@ -1168,6 +1168,26 @@ nav {
     width: 100%;
 }
 
+.language-form {
+    align-items: center;
+    display: inline-flex;
+    gap: 6px;
+    margin: 0;
+}
+
+.language-form label {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.language-form select {
+    height: 38px;
+    margin: 0;
+    min-width: 112px;
+    padding: 6px 8px;
+}
+
 nav a,
 nav > span {
     margin-right: 0;
@@ -1205,6 +1225,10 @@ nav > span {
         margin-left: 0;
         margin-right: 0;
         width: 100%;
+    }
+
+    .language-form {
+        justify-content: center;
     }
 
     nav > * + * {

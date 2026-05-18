@@ -1,19 +1,20 @@
 {% extends 'games/base.html' %}
+{% load game_i18n %}
 
 {% block title %}
-Nova Partida
+{% tr "new_game" %}
 {% endblock %}
 
 {% block content %}
 
 <main class="game-create-page">
-<h1>Nova Partida</h1>
+<h1>{% tr "new_game" %}</h1>
 
 <form method="POST" class="form-card game-create-form" novalidate>
     {% csrf_token %}
 
     <div class="form-field">
-        <span class="form-label">Oponente</span>
+        <span class="form-label">{% tr "opponent" %}</span>
         <div class="option-group">
             {% for option in form.opponent_mode %}
                 <label class="option-item">
@@ -28,7 +29,7 @@ Nova Partida
     </div>
 
     <div class="form-field" id="opponent-name-field">
-        <label for="{{ form.opponent_name.id_for_label }}">Nome do oponente</label>
+        <label for="{{ form.opponent_name.id_for_label }}">{% tr "opponent_name" %}</label>
         {{ form.opponent_name }}
         {% for error in form.opponent_name.errors %}
             <p class="field-error">{{ error }}</p>
@@ -36,7 +37,7 @@ Nova Partida
     </div>
 
     <div class="form-field">
-        <span class="form-label">Cor das peças</span>
+        <span class="form-label">{% tr "piece_color" %}</span>
         <div class="option-group">
             {% for option in form.color_choice %}
                 <label class="option-item">
@@ -51,14 +52,14 @@ Nova Partida
     </div>
 
     <div class="form-field">
-        <label for="{{ form.time_control_minutes.id_for_label }}">Tempo por jogador (minutos)</label>
+        <label for="{{ form.time_control_minutes.id_for_label }}">{% tr "time_per_player" %}</label>
         {{ form.time_control_minutes }}
         {% for error in form.time_control_minutes.errors %}
             <p class="field-error">{{ error }}</p>
         {% endfor %}
     </div>
 
-    <button type="submit">Criar partida</button>
+    <button type="submit">{% tr "create_game" %}</button>
 </form>
 
 <script>

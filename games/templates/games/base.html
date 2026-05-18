@@ -1,13 +1,14 @@
 {% load static %}
+{% load game_i18n %}
 
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="{{ current_language }}">
 <head>
     <meta charset="UTF-8">
 
-    <title>{% block title %}Xadrez{% endblock %}</title>
+    <title>{% block title %}GChess{% endblock %}</title>
 
-    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=27">
+    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=28">
 </head>
 
 <body>
@@ -16,32 +17,48 @@
     <a class="nav-brand" href="{% url 'home' %}" aria-label="GChess">
         <img src="{% static 'games/gchess-logo.png' %}" alt="GChess">
     </a>
-    <a href="{% url 'home' %}">Início</a>
-    <a href="{% url 'games_list' %}">Partidas</a>
-    <a href="{% url 'game_create' %}">Nova Partida</a>
-    <a href="{% url 'game_analyzer' %}">Analisar PGN</a>
+    <a href="{% url 'home' %}">{% tr "nav_home" %}</a>
+    <a href="{% url 'games_list' %}">{% tr "nav_games" %}</a>
+    <a href="{% url 'game_create' %}">{% tr "nav_new_game" %}</a>
+    <a href="{% url 'game_analyzer' %}">{% tr "nav_analyze_pgn" %}</a>
+
+    <form class="language-form" method="POST" action="{% url 'set_language' %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <label for="language-select">{% tr "language" %}</label>
+        <select id="language-select" name="language" onchange="this.form.submit()">
+            {% for code, label in language_options %}
+                <option value="{{ code }}"{% if code == current_language %} selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </form>
 
     {% if user.is_authenticated %}
-        <span>Olá, {{ user.username }}{% if user.player_profile %} · Elo {{ user.player_profile.elo }}{% endif %}</span>
+        <span>{% tr "nav_hello" %}, {{ user.username }}{% if user.player_profile %} · {% tr "nav_elo" %} {{ user.player_profile.elo }}{% endif %}</span>
 
         <div class="notification-area">
-            <button id="notification-toggle" type="button">Convites <span id="notification-count" hidden>0</span></button>
+            <button id="notification-toggle" type="button">{% tr "nav_invitations" %} <span id="notification-count" hidden>0</span></button>
             <div id="notification-panel" class="notification-panel" hidden>
-                <p class="notification-empty">Nenhum convite no momento.</p>
+                <p class="notification-empty">{% tr "nav_no_invitations" %}</p>
             </div>
         </div>
 
         <form method="POST" action="{% url 'logout' %}" style="display: inline;">
             {% csrf_token %}
-            <button type="submit">Sair</button>
+            <button type="submit">{% tr "nav_logout" %}</button>
         </form>
     {% else %}
-        <a href="{% url 'login' %}">Entrar</a>
-        <a href="{% url 'register' %}">Criar conta</a>
+        <a href="{% url 'login' %}">{% tr "nav_login" %}</a>
+        <a href="{% url 'register' %}">{% tr "nav_register" %}</a>
     {% endif %}
     </nav>
 
     <hr>
+
+    {{ ui_texts|json_script:"ui-texts-data" }}
+    <script>
+        const UI_TEXTS = JSON.parse(document.getElementById('ui-texts-data').textContent);
+    </script>
 
     {% block content %}
     {% endblock %}
@@ -97,7 +114,7 @@
             if (invitations.length === 0) {
                 const empty = document.createElement('p');
                 empty.className = 'notification-empty';
-                empty.innerText = 'Nenhum convite no momento.';
+                empty.innerText = UI_TEXTS.nav_no_invitations;
                 notificationPanel.appendChild(empty);
                 return;
             }
@@ -107,27 +124,21 @@
                 item.className = 'notification-item';
 
                 const text = document.createElement('p');
-                text.innerText = invitation.opponent_mode === 'random'
-                    ? `${invitation.creator} procura um oponente aleatório.`
-                    : `${invitation.creator} convidou você para jogar.`;
-
-                text.innerText += invitation.time_control_minutes
-                    ? ` Tempo: ${invitation.time_control_minutes} min por jogador.`
-                    : ' Tempo: livre.';
+                text.innerText = invitation.label;
 
                 const actions = document.createElement('div');
                 actions.className = 'notification-actions';
 
                 const acceptButton = document.createElement('button');
                 acceptButton.type = 'button';
-                acceptButton.innerText = 'Aceitar';
+                acceptButton.innerText = UI_TEXTS.accept;
                 acceptButton.addEventListener('click', function () {
                     answerInvitation(invitation.id, 'aceitar');
                 });
 
                 const rejectButton = document.createElement('button');
                 rejectButton.type = 'button';
-                rejectButton.innerText = 'Recusar';
+                rejectButton.innerText = UI_TEXTS.reject;
                 rejectButton.addEventListener('click', function () {
                     answerInvitation(invitation.id, 'recusar');
                 });

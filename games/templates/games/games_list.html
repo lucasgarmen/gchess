@@ -1,39 +1,40 @@
 {% extends 'games/base.html' %}
+{% load game_i18n %}
 
 {% block title %}
-Partidas
+{% tr "nav_games" %}
 {% endblock %}
 
 {% block content %}
 
-<h1>Minhas Partidas</h1>
+<h1>{% tr "my_games" %}</h1>
 
-<p>Aqui ficarao suas partidas salvas para revisao.</p>
+<p>{% tr "saved_games_help" %}</p>
 
 {% if game_cards %}
 <div class="games-columns">
     <section class="games-column">
-        <h2>Partidas em andamento</h2>
+        <h2>{% tr "games_in_progress" %}</h2>
 
         {% for card in in_progress_cards %}
             {% include 'games/_game_card.html' %}
         {% empty %}
-            <p class="games-column-empty">Nenhuma partida em andamento.</p>
+            <p class="games-column-empty">{% tr "no_games_in_progress" %}</p>
         {% endfor %}
     </section>
 
     <section class="games-column">
-        <h2>Partidas finalizadas</h2>
+        <h2>{% tr "finished_games" %}</h2>
 
         {% for card in finished_cards %}
             {% include 'games/_game_card.html' %}
         {% empty %}
-            <p class="games-column-empty">Nenhuma partida finalizada.</p>
+            <p class="games-column-empty">{% tr "no_finished_games" %}</p>
         {% endfor %}
     </section>
 </div>
 {% else %}
-<p>Nenhuma partida cadastrada ainda.</p>
+<p>{% tr "no_games" %}</p>
 {% endif %}
 
 {% endblock %}

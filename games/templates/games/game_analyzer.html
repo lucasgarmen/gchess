@@ -1,49 +1,47 @@
 {% extends 'games/base.html' %}
 {% load static %}
+{% load game_i18n %}
 
 {% block title %}
-Analisar PGN
+{% tr "analyze_pgn" %}
 {% endblock %}
 
 {% block content %}
 
 <section class="analyzer-create-page">
-<h1>Analisar PGN</h1>
+<h1>{% tr "analyze_pgn" %}</h1>
 
 <form method="POST" class="form-card">
     {% csrf_token %}
 
-    <label for="pgn">Cole o PGN aqui:</label>
+    <label for="pgn">{% tr "paste_pgn" %}</label>
     <textarea name="pgn" id="pgn" rows="8">{{ pgn_text }}</textarea>
 
-    <button type="submit">Analisar partida</button>
+    <button type="submit">{% tr "analyze_game" %}</button>
 </form>
 
 {% if error_message %}
     <div class="card">
-        <h2>Erro</h2>
+        <h2>{% tr "error" %}</h2>
         <p>{{ error_message }}</p>
     </div>
 {% endif %}
 </section>
 
 {% if moves %}
-
-
-
 <main class="game-layout computer-game-layout">
     <aside class="card computer-panel">
         <div class="trainer-chat">
-            <h2>Chat do treinador</h2>
+            <h2>{% tr "coach_chat" %}</h2>
             <div id="trainer-chat-log" class="trainer-chat-log"></div>
             <form id="trainer-chat-form" class="trainer-chat-form">
                 <input
                     id="trainer-chat-input"
                     type="text"
-                    placeholder="Pergunte sobre a posição atual"
+                    placeholder="{% tr "ask_current_position" %}"
                     autocomplete="off"
                 >
-                <button id="trainer-chat-submit" type="submit">Perguntar</button>
+                <button id="trainer-chat-submit" type="submit">{% tr "ask" %}</button>
             </form>
         </div>
     </aside>
@@ -57,7 +55,7 @@ Analisar PGN
 
             <div>
                 <div class="board-toolbar">
-                    <button id="flip-board" class="icon-button" type="button" title="Girar tablero" aria-label="Girar tablero">↻</button>
+                    <button id="flip-board" class="icon-button" type="button" title="{% tr "flip_board" %}" aria-label="{% tr "flip_board" %}">↻</button>
                 </div>
                 <div id="board" class="board"></div>
 
@@ -70,19 +68,19 @@ Analisar PGN
     </section>
 
     <aside class="pgn-panel">
-        <h2>Análise</h2>
+        <h2>{% tr "analysis" %}</h2>
 
-        <p id="turn-indicator">Vez das brancas</p>
+        <p id="turn-indicator">{% tr "turn_white" %}</p>
         <p id="game-status" class="game-status" hidden></p>
 
         <div class="history-controls">
-            <button id="prev-move">Anterior</button>
-            <button id="next-move">Próxima</button>
-            <button id="last-move">Última posição</button>
+            <button id="prev-move">{% tr "previous" %}</button>
+            <button id="next-move">{% tr "next" %}</button>
+            <button id="last-move">{% tr "last_position" %}</button>
         </div>
 
         <div id="analysis-comment" class="analysis-comment">
-            Posição inicial.
+            {% tr "initial_position" %}
         </div>
 
         <ul id="move-list" style="display: none;"></ul>
@@ -108,9 +106,10 @@ Analisar PGN
     const ANALYZER_MODE = true;
     const SAVED_MOVES = JSON.parse(document.getElementById('saved-moves-data').textContent);
     const MOVE_ANALYSIS = JSON.parse(document.getElementById('analysis-data').textContent);
+    const UI_LANGUAGE = "{{ current_language }}";
 </script>
 
-<script src="{% static 'games/board.js' %}?v=38"></script>
+<script src="{% static 'games/board.js' %}?v=43"></script>
 <script src="{% static 'games/analyzer.js' %}?v=2"></script>
 
 {% endif %}

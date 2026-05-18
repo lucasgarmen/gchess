@@ -1,7 +1,8 @@
 {% extends 'games/base.html' %}
+{% load game_i18n %}
 
 {% block title %}
-Criar conta
+{% tr "register" %}
 {% endblock %}
 
 {% block content %}
@@ -10,7 +11,7 @@ Criar conta
     <form method="POST" class="form-card auth-card" novalidate>
         {% csrf_token %}
 
-        <h1>Criar conta</h1>
+        <h1>{% tr "register" %}</h1>
 
         {% if form.non_field_errors %}
             <div class="form-errors">
@@ -19,7 +20,7 @@ Criar conta
         {% endif %}
 
         <div class="form-field">
-            <label for="{{ form.username.id_for_label }}">Usuário</label>
+            <label for="{{ form.username.id_for_label }}">{% tr "username" %}</label>
             {{ form.username }}
             {% for error in form.username.errors %}
                 <p class="field-error">{{ error }}</p>
@@ -27,7 +28,7 @@ Criar conta
         </div>
 
         <div class="form-field">
-            <label for="{{ form.email.id_for_label }}">Email</label>
+            <label for="{{ form.email.id_for_label }}">{% tr "email" %}</label>
             {{ form.email }}
             {% for error in form.email.errors %}
                 <p class="field-error">{{ error }}</p>
@@ -35,16 +36,16 @@ Criar conta
         </div>
 
         <div class="form-field">
-            <label for="{{ form.password.id_for_label }}">Senha</label>
+            <label for="{{ form.password.id_for_label }}">{% tr "password" %}</label>
             {{ form.password }}
-            <p class="field-help">Deve ter letras e números.</p>
+            <p class="field-help">{% tr "password_help" %}</p>
             {% for error in form.password.errors %}
                 <p class="field-error">{{ error }}</p>
             {% endfor %}
         </div>
 
         <div class="form-field">
-            <label for="{{ form.password_confirm.id_for_label }}">Confirmar senha</label>
+            <label for="{{ form.password_confirm.id_for_label }}">{% tr "confirm_password" %}</label>
             {{ form.password_confirm }}
             {% for error in form.password_confirm.errors %}
                 <p class="field-error">{{ error }}</p>
@@ -53,14 +54,14 @@ Criar conta
 
         <label class="password-toggle">
             <input type="checkbox" id="show-passwords">
-            Mostrar senha
+            {% tr "show_password" %}
         </label>
 
-        <button type="submit">Criar conta</button>
+        <button type="submit">{% tr "register" %}</button>
 
         <p class="auth-switch">
-            Já tem conta?
-            <a href="{% url 'login' %}">Entrar</a>
+            {% tr "already_account" %}
+            <a href="{% url 'login' %}">{% tr "login" %}</a>
         </p>
     </form>
 </main>

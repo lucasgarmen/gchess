@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST, require_http_methods
 from accounts.models import PlayerProfile
+from .i18n import current_language, normalize_language, t
 from .models import ChessGame, GameChatMessage, GameChatRead, GameInvitation, Move, UserPresence
 
 PROMOTION_PIECES = {
@@ -75,6 +76,12 @@ def validate_moves_payload(moves):
         raise ValueError('Lista de jogadas invalida.')
 
     return moves
+
+
+@require_POST
+def set_language(request):
+    request.session['language'] = normalize_language(request.POST.get('language'))
+    return redirect(request.POST.get('next') or 'home')
 
 
 def online_since():
@@ -370,7 +377,7 @@ def games_list(request):
 
         game_cards.append({
             'game': game,
-            'status': build_game_list_status(game, request.user, finished_info),
+            'status': build_game_list_status(game, request.user, finished_info, current_language(request)),
             'is_finished': finished_info['finished'],
             'is_in_progress': not finished_info['finished'],
         })
@@ -382,11 +389,11 @@ def games_list(request):
     })
 
 
-def build_game_list_status(game, user, finished_info):
+def build_game_list_status(game, user, finished_info, language='pt'):
     if finished_info['finished']:
         if game.result == 'draw':
             return {
-                'text': 'Partida empatada',
+                'text': t(language, 'game_drawn'),
                 'class': 'game-card-status-draw',
             }
 
@@ -395,20 +402,20 @@ def build_game_list_status(game, user, finished_info):
 
         if user_color and winner in ('white', 'black'):
             return {
-                'text': 'Partida vencida' if winner == user_color else 'Partida perdida',
+                'text': t(language, 'game_won') if winner == user_color else t(language, 'game_lost'),
                 'class': 'game-card-status-won' if winner == user_color else 'game-card-status-lost',
             }
 
         return {
-            'text': 'Partida finalizada',
+            'text': t(language, 'game_finished'),
             'class': 'game-card-status-finished',
         }
 
     moves_count = game.moves.count()
-    next_turn = 'brancas' if moves_count % 2 == 0 else 'pretas'
+    next_turn = t(language, 'white').lower() if moves_count % 2 == 0 else t(language, 'black').lower()
 
     return {
-        'text': f'Vez das {next_turn}',
+        'text': f'{t(language, "game")}: {next_turn}' if language == 'en' else f'Vez das {next_turn}' if language == 'pt' else f'Turno de {next_turn}',
         'class': 'game-card-status-turn',
     }
 
@@ -562,7 +569,7 @@ def game_detail(request, game_id):
 def game_create(request):
     touch_presence(request.user)
     if request.method == 'POST':
-        form = ChessGameForm(request.POST)
+        form = ChessGameForm(request.POST, language=current_language(request))
 
         if form.is_valid():
             opponent_mode = form.cleaned_data['opponent_mode']
@@ -599,7 +606,7 @@ def game_create(request):
                 )
                 return redirect('game_invitation_wait', invitation_id=invitation.id)
     else:
-        form = ChessGameForm()
+        form = ChessGameForm(language=current_language(request))
 
     return render(request, 'games/game_create.html', {
         'form': form
@@ -942,6 +949,7 @@ def cancel_invitation(request, invitation_id):
 @rate_limit(120, 60, 'game-notifications')
 def game_notifications(request):
     touch_presence(request.user)
+    language = current_language(request)
     invitations = GameInvitation.objects.filter(
         status='pending',
     ).filter(
@@ -959,6 +967,19 @@ def game_notifications(request):
                 'opponent_mode': invitation.opponent_mode,
                 'creator_color': invitation.creator_color,
                 'time_control_minutes': invitation.time_control_minutes,
+                'label': (
+                    f"{invitation.creator.username} procura um oponente aleatório."
+                    if invitation.opponent_mode == 'random'
+                    else f"{invitation.creator.username} convidou você para jogar."
+                ) if language == 'pt' else (
+                    f"{invitation.creator.username} busca un oponente aleatorio."
+                    if invitation.opponent_mode == 'random'
+                    else f"{invitation.creator.username} te invitó a jugar."
+                ) if language == 'es' else (
+                    f"{invitation.creator.username} is looking for a random opponent."
+                    if invitation.opponent_mode == 'random'
+                    else f"{invitation.creator.username} invited you to play."
+                ),
             }
             for invitation in invitations
         ]
@@ -1335,6 +1356,7 @@ def coach_analysis(request):
         return JsonResponse({'error': str(exc)}, status=400)
 
     player_color = data.get("player_color", "white")
+    language = normalize_language(data.get("language") or current_language(request))
 
     if player_color not in ('white', 'black'):
         return JsonResponse({'error': 'Cor invalida.'}, status=400)
@@ -1409,6 +1431,7 @@ def coach_analysis(request):
                 best_san,
                 before_score,
                 after_score,
+                language,
             ),
             "loss": loss,
             "played": played_san,
@@ -1455,6 +1478,7 @@ def trainer_chat(request):
 
     question = data.get("question", "").strip()
     player_color = data.get("player_color", "white")
+    language = normalize_language(data.get("language") or current_language(request))
 
     if player_color not in ('white', 'black'):
         return JsonResponse({'error': 'Cor invalida.'}, status=400)
@@ -1482,7 +1506,7 @@ def trainer_chat(request):
     engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
 
     try:
-        answer = build_trainer_chat_answer(engine, board, san_moves, question, player_color)
+        answer = build_trainer_chat_answer(engine, board, san_moves, question, player_color, language)
 
         return JsonResponse({
             "answer": answer,
@@ -1495,7 +1519,7 @@ def trainer_chat(request):
         engine.quit()
 
 
-def build_trainer_chat_answer(engine, board, san_moves, question, player_color):
+def build_trainer_chat_answer(engine, board, san_moves, question, player_color, language='pt'):
     question_text = question.casefold()
     analysis = engine.analyse(board, chess.engine.Limit(time=0.12))
     best_move = analysis.get("pv", [None])[0]
@@ -1509,6 +1533,30 @@ def build_trainer_chat_answer(engine, board, san_moves, question, player_color):
     best_san = board.san(best_move)
     best_ideas = " ".join(describe_coach_ideas(board, best_move))
     evaluation = describe_position_for_player(score, player_color)
+
+    if language == 'es':
+        if player_is_to_move:
+            return (
+                f"Yo consideraría {best_san}. La idea principal es mejorar la actividad, "
+                "cuidar las piezas indefensas y controlar casillas importantes."
+            )
+
+        return (
+            f"Ahora juega el rival. La continuación indicada por el motor es {best_san}; "
+            "mira qué amenaza crea y qué piezas quedan atacadas."
+        )
+
+    if language == 'en':
+        if player_is_to_move:
+            return (
+                f"I would consider {best_san}. The main idea is to improve activity, "
+                "watch undefended pieces, and control key squares."
+            )
+
+        return (
+            f"It is your opponent's turn. The engine points to {best_san}; "
+            "watch the threat it creates and which pieces are attacked."
+        )
 
     if any(word in question_text for word in ("jogada", "jugada", "lance", "movimiento", "movimento", "última", "ultima", "essa", "esa")):
         last_move_answer = describe_last_move_for_chat(engine, board, san_moves)
@@ -1622,7 +1670,25 @@ def describe_current_threats(board):
     return "Não vejo uma captura ou xeque imediato muito óbvio; a briga principal parece ser por casas e desenvolvimento."
 
 
-def coach_comment(loss, board, played_move, best_move, played_san, best_san, before_score, after_score):
+def coach_comment(loss, board, played_move, best_move, played_san, best_san, before_score, after_score, language='pt'):
+    if language == 'es':
+        if loss < 30:
+            return f"Buena jugada: {played_san}. La posición se mantiene sana. Sigue mirando piezas atacadas y seguridad del rey."
+        if loss < 80:
+            return f"Imprecisión: {played_san}. Yo consideraría {best_san}, que mantiene mejor la coordinación."
+        if loss < 180:
+            return f"Error: {played_san} empeora la posición. Mejor era {best_san}, con más actividad o menos riesgo."
+        return f"Jugada muy mala: {played_san} pierde mucha fuerza. La recomendación era {best_san}."
+
+    if language == 'en':
+        if loss < 30:
+            return f"Good move: {played_san}. The position stays healthy. Keep checking attacked pieces and king safety."
+        if loss < 80:
+            return f"Inaccuracy: {played_san}. I would consider {best_san}, which keeps better coordination."
+        if loss < 180:
+            return f"Mistake: {played_san} worsens the position. Better was {best_san}, with more activity or less risk."
+        return f"Very bad move: {played_san} loses a lot of strength. The recommendation was {best_san}."
+
     played_ideas = describe_coach_ideas(board, played_move)
     best_ideas = describe_coach_ideas(board, best_move)
     played_explanation = " ".join(played_ideas)
@@ -1861,6 +1927,7 @@ def read_internal_coordinate_game(pgn_text):
 @login_required
 @rate_limit(12, 60, 'game-analyzer')
 def game_analyzer(request):
+    language = current_language(request)
     moves = []
     analysis = []
     pgn_text = ""
@@ -1948,7 +2015,7 @@ def game_analyzer(request):
                     analysis.append({
                         "move_number": move_number,
                         "san": san,
-                        "comment": generate_comment(loss, move_description, best_description),
+                        "comment": generate_comment(loss, move_description, best_description, language),
                         "loss": loss,
                     })
 
@@ -1973,7 +2040,25 @@ def game_analyzer(request):
         "error_message": error_message,
     })
 
-def generate_comment(loss, move_description, best_description):
+def generate_comment(loss, move_description, best_description, language='pt'):
+    if language == 'es':
+        if loss < 30:
+            return "Buena jugada. Mantiene una posición sana."
+        if loss < 80:
+            return "Imprecisión. Había una continuación más precisa según el motor."
+        if loss < 180:
+            return "Error. La jugada empeora la posición; conviene revisar la recomendación del motor."
+        return "Jugada muy mala. Pierde demasiada ventaja o material."
+
+    if language == 'en':
+        if loss < 30:
+            return "Good move. It keeps a healthy position."
+        if loss < 80:
+            return "Inaccuracy. The engine found a more precise continuation."
+        if loss < 180:
+            return "Mistake. The move worsens the position; check the engine recommendation."
+        return "Very bad move. It loses too much advantage or material."
+
     if loss < 30:
         return f"Boa jogada. Eu gosto de {move_description}; mantém uma boa posição."
 

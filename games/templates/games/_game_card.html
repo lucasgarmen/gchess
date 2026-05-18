@@ -1,3 +1,4 @@
+{% load game_i18n %}
 {% with game=card.game %}
 <div class="card game-card{% if card.is_finished %} game-card-finished{% endif %}{% if card.is_in_progress %} game-card-in-progress{% endif %}">
     <p class="game-card-status {{ card.status.class }}">{{ card.status.text }}</p>
@@ -8,25 +9,15 @@
         {{ game.white_player }} vs {{ game.black_player }}
     {% endif %}
     </h2>
-    <p>
-        Brancas: {{ game.white_player }}
-        {% if game.white_user and game.white_user.player_profile %}
-            (Elo {{ game.white_user.player_profile.elo }})
-        {% endif %}
-    </p>
-    <p>
-        Pretas: {{ game.black_player }}
-        {% if game.black_user and game.black_user.player_profile %}
-            (Elo {{ game.black_user.player_profile.elo }})
-        {% endif %}
-    </p>
-    <p>Criada em: {{ game.created_at }}</p>
+    <p>{% tr "white" %}: {{ game.white_player }}</p>
+    <p>{% tr "black" %}: {{ game.black_player }}</p>
+    <p>{% tr "created_at" %} {{ game.created_at|date:"d/m/Y h:i A" }}</p>
 
     <a href="{% url 'game_detail' game.id %}">
         {% if card.is_finished %}
-            Revisão da partida
+            {% tr "review_game" %}
         {% else %}
-            Continuar partida
+            {% tr "continue_game" %}
         {% endif %}
     </a>
 </div>

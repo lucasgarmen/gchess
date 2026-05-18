@@ -1,38 +1,39 @@
 {% extends 'games/base.html' %}
+{% load game_i18n %}
 
 {% block title %}
-Aguardando oponente
+{% tr "waiting_opponent" %}
 {% endblock %}
 
 {% block content %}
 
 <main class="waiting-page">
     <section class="form-card waiting-card">
-        <h1>Aguardando oponente</h1>
+        <h1>{% tr "waiting_opponent" %}</h1>
 
         {% if invitation.opponent_mode == 'random' %}
-            <p>Procurando um jogador aleatorio online...</p>
+            <p>{% tr "searching_random" %}</p>
         {% elif invitation.opponent_mode == 'link' %}
-            <p>Envie este link para quem vai jogar contra voce.</p>
+            <p>{% tr "send_this_link" %}</p>
             <div class="invite-link-row">
                 <input id="invitation-link" type="text" value="{{ invitation_accept_url }}" readonly>
-                <button id="copy-invitation-link" type="button">Copiar</button>
+                <button id="copy-invitation-link" type="button">{% tr "copy" %}</button>
             </div>
         {% else %}
-            <p>Convite enviado para {{ invitation.opponent.username }}.</p>
+            <p>{% tr "invitation_sent_to" %} {{ invitation.opponent.username }}.</p>
         {% endif %}
         <p>
-            Tempo:
+            {% tr "time" %}
             {% if invitation.time_control_minutes %}
-                {{ invitation.time_control_minutes }} min por jogador
+                {{ invitation.time_control_minutes }} {% tr "minutes_per_player" %}
             {% else %}
-                livre
+                {% tr "free_time" %}
             {% endif %}
         </p>
 
         <div class="loading-line"></div>
-        <p id="invitation-wait-status" class="field-help">Assim que alguem aceitar, a partida vai abrir automaticamente.</p>
-        <button id="cancel-invitation" type="button">Cancelar solicitacao</button>
+        <p id="invitation-wait-status" class="field-help">{% tr "auto_open_when_accepted" %}</p>
+        <button id="cancel-invitation" type="button">{% tr "cancel_request" %}</button>
     </section>
 </main>
 
@@ -73,7 +74,7 @@ Aguardando oponente
             });
 
             if (!response.ok) {
-                throw new Error('Nao foi possivel consultar o convite.');
+                throw new Error('status');
             }
 
             const data = await response.json();
@@ -86,20 +87,19 @@ Aguardando oponente
 
             if (data.status === 'rejected') {
                 invitationPollingStopped = true;
-                waitStatus.innerText = 'O convite foi recusado.';
+                waitStatus.innerText = 'Convite recusado.';
                 cancelInvitationButton.disabled = true;
                 return;
             }
 
             if (data.status === 'cancelled') {
                 invitationPollingStopped = true;
-                waitStatus.innerText = 'Solicitacao cancelada.';
+                waitStatus.innerText = 'Solicitação cancelada.';
                 cancelInvitationButton.disabled = true;
                 return;
             }
         } catch (error) {
-            console.error('Erro ao consultar convite:', error);
-            waitStatus.innerText = 'Ainda aguardando oponente...';
+            waitStatus.innerText = 'Aguardando oponente...';
         }
 
         setTimeout(checkInvitationStatus, 1500);
@@ -108,7 +108,6 @@ Aguardando oponente
     cancelInvitationButton.addEventListener('click', async function () {
         invitationPollingStopped = true;
         cancelInvitationButton.disabled = true;
-        waitStatus.innerText = 'Cancelando solicitacao...';
 
         const response = await fetch(cancelInvitationUrl, {
             method: 'POST',
@@ -125,7 +124,7 @@ Aguardando oponente
 
         invitationPollingStopped = false;
         setTimeout(checkInvitationStatus, 1500);
-        waitStatus.innerText = data.error || 'Nao foi possivel cancelar a solicitacao.';
+        waitStatus.innerText = data.error || 'Não foi possível cancelar.';
     });
 
     if (copyInvitationLinkButton && invitationLinkInput) {
@@ -135,10 +134,8 @@ Aguardando oponente
 
             try {
                 await navigator.clipboard.writeText(invitationLinkInput.value);
-                waitStatus.innerText = 'Link copiado. Aguardando oponente...';
             } catch (error) {
                 document.execCommand('copy');
-                waitStatus.innerText = 'Link copiado. Aguardando oponente...';
             }
         });
     }

@@ -1,17 +1,18 @@
 {% extends 'games/base.html' %}
 {% load static %}
+{% load game_i18n %}
 
 {% block title %}
-Início
+{% tr "nav_home" %}
 {% endblock %}
 
 {% block content %}
 
-<h1>Jogar contra o computador</h1>
+<h1>{% tr "home_title" %}</h1>
 
 <main class="game-layout computer-game-layout">
 <aside class="card computer-panel">
-    <label for="computer-elo">Elo do Bot:</label>
+    <label for="computer-elo">{% tr "bot_elo" %}</label>
 
     <select id="computer-elo">
         <option value="500">ELO 500</option>
@@ -23,31 +24,31 @@ Início
         <option value="2500">ELO 2500</option>
     </select>
 
-    <label for="player-color">Jugar como:</label>
+    <label for="player-color">{% tr "play_as" %}</label>
 
     <select id="player-color">
-        <option value="white" selected>Blancas</option>
-        <option value="black">Negras</option>
+        <option value="white" selected>{% tr "white" %}</option>
+        <option value="black">{% tr "black" %}</option>
     </select>
 
     <div class="computer-controls">
-        <button id="toggle-coach" type="button">Habilitar treinador</button>
-        <button id="undo-computer-move" type="button">Voltar jogada</button>
-        <button id="reset-computer-game" type="button">Reiniciar partida</button>
+        <button id="toggle-coach" type="button">{% tr "enable_coach" %}</button>
+        <button id="undo-computer-move" type="button">{% tr "undo_move" %}</button>
+        <button id="reset-computer-game" type="button">{% tr "reset_game" %}</button>
     </div>
     <div id="coach-comment" class="coach-comment" hidden></div>
 
     <div class="trainer-chat">
-        <h2>Chat do treinador</h2>
+        <h2>{% tr "coach_chat" %}</h2>
         <div id="trainer-chat-log" class="trainer-chat-log"></div>
         <form id="trainer-chat-form" class="trainer-chat-form">
             <input
                 id="trainer-chat-input"
                 type="text"
-                placeholder="Pergunte sobre a posição"
+                placeholder="{% tr "ask_position" %}"
                 autocomplete="off"
             >
-            <button id="trainer-chat-submit" type="submit">Perguntar</button>
+            <button id="trainer-chat-submit" type="submit">{% tr "ask" %}</button>
         </form>
     </div>
 </aside>
@@ -61,10 +62,10 @@ Início
 
             <div>
                 <div class="board-toolbar">
-                    <button id="analysis-prev" class="icon-button analysis-nav-button" type="button" title="Retroceder análisis" aria-label="Retroceder análisis" hidden>&lt;</button>
-                    <button id="analysis-next" class="icon-button analysis-nav-button" type="button" title="Avanzar análisis" aria-label="Avanzar análisis" hidden>&gt;</button>
-                    <button id="toggle-analysis-mode" class="analysis-mode-button" type="button">Modo análisis</button>
-                    <button id="flip-board" class="icon-button" type="button" title="Girar tablero" aria-label="Girar tablero">↻</button>
+                    <button id="analysis-prev" class="icon-button analysis-nav-button" type="button" title="{% tr "previous" %}" aria-label="{% tr "previous" %}" hidden>&lt;</button>
+                    <button id="analysis-next" class="icon-button analysis-nav-button" type="button" title="{% tr "next" %}" aria-label="{% tr "next" %}" hidden>&gt;</button>
+                    <button id="toggle-analysis-mode" class="analysis-mode-button" type="button">{% tr "analysis_mode" %}</button>
+                    <button id="flip-board" class="icon-button" type="button" title="{% tr "flip_board" %}" aria-label="{% tr "flip_board" %}">↻</button>
                 </div>
                 <div id="board" class="board"></div>
 
@@ -77,15 +78,15 @@ Início
     </section>
 
     <aside class="pgn-panel">
-        <h2>Partida</h2>
+        <h2>{% tr "game" %}</h2>
 
-        <p id="turn-indicator">Vez das brancas</p>
+        <p id="turn-indicator">{% tr "turn_white" %}</p>
         <p id="game-status" class="game-status" hidden></p>
 
         <div class="history-controls">
-            <button id="prev-move">Anterior</button>
-            <button id="next-move">Próxima</button>
-            <button id="last-move">Última posição</button>
+            <button id="prev-move">{% tr "previous" %}</button>
+            <button id="next-move">{% tr "next" %}</button>
+            <button id="last-move">{% tr "last_position" %}</button>
         </div>
 
         <ul id="move-list" style="display: none;"></ul>
@@ -107,9 +108,10 @@ Início
     const GAME_ID = null;
     const SAVED_MOVES = [];
     const COMPUTER_MODE = true;
+    const UI_LANGUAGE = "{{ current_language }}";
     let PLAYER_COLOR = 'white';
 </script>
 
-<script src="{% static 'games/board.js' %}?v=38"></script>
+<script src="{% static 'games/board.js' %}?v=44"></script>
 
 {% endblock %}
