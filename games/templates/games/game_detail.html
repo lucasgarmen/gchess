@@ -2,36 +2,33 @@
 {% load static %}
 
 {% block title %}
-{{ game.title }}
+{{ game.title|default:"Partida" }}
 {% endblock %}
 
 {% block content %}
 
+{% if game.title %}
 <h1>
-    {% if game.title %}
-        {{ game.title }}
-    {% else %}
-        Partida {{ game.id }}
-    {% endif %}
+    {{ game.title }}
 </h1>
+{% endif %}
 
-<div class="card">
-    <p>
-        <strong>Brancas:</strong> {{ game.white_player }}
-        {% if game.white_user and game.white_user.player_profile %}
-            (Elo {{ game.white_user.player_profile.elo }})
-        {% endif %}
-    </p>
-    <p>
-        <strong>Pretas:</strong> {{ game.black_player }}
-        {% if game.black_user and game.black_user.player_profile %}
-            (Elo {{ game.black_user.player_profile.elo }})
-        {% endif %}
-    </p>
-    <p><strong>Criada em:</strong> {{ game.created_at }}</p>
-</div>
+<main class="game-layout online-game-layout">
+    <aside class="card game-info-card">
+        <div class="game-info-item">
+            <strong>Brancas:</strong>
+            <span>"{{ game.white_player }}"</span>
+        </div>
+        <div class="game-info-item">
+            <strong>Pretas:</strong>
+            <span>"{{ game.black_player }}"</span>
+        </div>
+        <div class="game-info-item">
+            <strong>Criada em:</strong>
+            <span>{{ game.created_at|date:"d/m/Y h:i A" }}</span>
+        </div>
+    </aside>
 
-<main class="game-layout">
     <section class="board-area">
 
 

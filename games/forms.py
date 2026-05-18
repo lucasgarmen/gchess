@@ -14,6 +14,7 @@ class ChessGameForm(forms.Form):
         choices=[
             ('random', 'Aleatório'),
             ('choose', 'Escolher oponente'),
+            ('link', 'Enviar link'),
         ],
         initial='random',
         widget=forms.RadioSelect,

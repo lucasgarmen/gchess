@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -69,6 +71,7 @@ class UserPresence(models.Model):
 class GameInvitation(models.Model):
     OPPONENT_CHOICES = [
         ('direct', 'Oponente escolhido'),
+        ('link', 'Convite por link'),
         ('random', 'Oponente aleatório'),
     ]
 
@@ -87,6 +90,7 @@ class GameInvitation(models.Model):
 
     creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_game_invitations')
     opponent = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True, related_name='received_game_invitations')
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     opponent_mode = models.CharField(max_length=20, choices=OPPONENT_CHOICES)
     creator_color = models.CharField(max_length=20, choices=COLOR_CHOICES)
     time_control_minutes = models.PositiveIntegerField(blank=True, null=True)

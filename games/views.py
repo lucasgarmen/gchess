@@ -1,5 +1,6 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -7,10 +8,12 @@ from .models import ChessGame
 from .forms import ChessGameForm
 from django.contrib.auth.decorators import login_required
 import json
+import os
 import chess
 import random
 import re
 from django.http import JsonResponse
+from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 from accounts.models import PlayerProfile
@@ -28,6 +31,49 @@ PRESENCE_TOUCH_SECONDS = 30
 ELO_K_FACTOR = 32
 CLOCK_FIELDS = ['white_time_seconds', 'black_time_seconds', 'active_clock_color', 'clock_started_at', 'status', 'result']
 PRESENCE_TOUCH_CACHE = {}
+MAX_JSON_BODY_BYTES = 24 * 1024
+MAX_ENGINE_MOVES = 300
+MAX_PGN_BYTES = 80 * 1024
+MAX_TRAINER_QUESTION_CHARS = 500
+
+
+def rate_limit(limit, window_seconds, key_prefix):
+    def decorator(view_func):
+        def wrapped(request, *args, **kwargs):
+            if request.user.is_authenticated:
+                identity = f'user:{request.user.id}'
+            else:
+                identity = f'ip:{request.META.get("REMOTE_ADDR", "unknown")}'
+
+            cache_key = f'rl:{key_prefix}:{identity}'
+            current = cache.get(cache_key, 0)
+
+            if current >= limit:
+                return JsonResponse({'error': 'Muitas solicitações. Tente novamente em alguns instantes.'}, status=429)
+
+            cache.set(cache_key, current + 1, window_seconds)
+            return view_func(request, *args, **kwargs)
+
+        return wrapped
+
+    return decorator
+
+
+def parse_json_body(request):
+    if len(request.body or b'') > MAX_JSON_BODY_BYTES:
+        raise ValueError('Payload muito grande.')
+
+    try:
+        return json.loads(request.body or b'{}')
+    except json.JSONDecodeError as exc:
+        raise ValueError('JSON invalido.') from exc
+
+
+def validate_moves_payload(moves):
+    if not isinstance(moves, list) or len(moves) > MAX_ENGINE_MOVES:
+        raise ValueError('Lista de jogadas invalida.')
+
+    return moves
 
 
 def online_since():
@@ -301,6 +347,7 @@ LOW_ELO_WEAKNESS = {
     },
 }
 
+@login_required
 @ensure_csrf_cookie
 def home(request):
     touch_presence(request.user)
@@ -387,8 +434,22 @@ def build_chess_move(move):
 
 
 def build_chess_move_from_data(move_data):
+    if not isinstance(move_data, dict):
+        raise ValueError('Jogada invalida.')
+
     promotion = PROMOTION_PIECES.get(move_data.get('promotion') or '')
     return chess.Move.from_uci(f"{move_data['from']}{move_data['to']}{promotion or ''}")
+
+
+def piece_type_name(piece):
+    return {
+        chess.PAWN: 'pawn',
+        chess.KNIGHT: 'horse',
+        chess.BISHOP: 'bishop',
+        chess.ROOK: 'rook',
+        chess.QUEEN: 'queen',
+        chess.KING: 'king',
+    }[piece.piece_type]
 
 
 def board_from_game_moves(game):
@@ -520,6 +581,14 @@ def game_create(request):
                         time_control_minutes=form.cleaned_data['time_control_minutes'],
                     )
                     return redirect('game_invitation_wait', invitation_id=invitation.id)
+            elif opponent_mode == 'link':
+                invitation = GameInvitation.objects.create(
+                    creator=request.user,
+                    opponent_mode='link',
+                    creator_color=form.cleaned_data['color_choice'],
+                    time_control_minutes=form.cleaned_data['time_control_minutes'],
+                )
+                return redirect('game_invitation_wait', invitation_id=invitation.id)
             else:
                 invitation = GameInvitation.objects.create(
                     creator=request.user,
@@ -537,10 +606,14 @@ def game_create(request):
     
 @login_required
 @require_POST
+@rate_limit(60, 60, 'save-move')
 def save_move(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
-    data = json.loads(request.body)
+    try:
+        data = parse_json_body(request)
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
     timeout_winner = apply_clock_elapsed(game)
 
     if timeout_winner:
@@ -553,6 +626,15 @@ def save_move(request, game_id):
 
     player_color = player_color_for_game(game, request.user)
     expected_color = 'white' if game.moves.count() % 2 == 0 else 'black'
+
+    if game.status == 'finished':
+        return JsonResponse({'error': 'A partida ja terminou.'}, status=409)
+
+    if not player_color:
+        return JsonResponse({'error': 'Apenas jogadores da partida podem mover.'}, status=403)
+
+    if player_color != expected_color:
+        return JsonResponse({'error': 'Nao e sua vez.'}, status=403)
 
     if player_color and data.get('piece_color') != player_color:
         return JsonResponse({'error': 'Você só pode mover suas próprias peças.'}, status=403)
@@ -573,24 +655,34 @@ def save_move(request, game_id):
     if chess_move not in board.legal_moves:
         return JsonResponse({'error': 'Jogada ilegal nessa posicao.'}, status=400)
 
+    moving_piece = board.piece_at(chess_move.from_square)
+
+    if not moving_piece:
+        return JsonResponse({'error': 'Jogada invalida.'}, status=400)
+
+    server_piece_color = 'white' if moving_piece.color == chess.WHITE else 'black'
+
+    if server_piece_color != player_color:
+        return JsonResponse({'error': 'Voce so pode mover suas proprias pecas.'}, status=403)
+
     draw_offer_declined_by_move = bool(
-        game.draw_offer_by_color and game.draw_offer_by_color != data.get('piece_color')
+        game.draw_offer_by_color and game.draw_offer_by_color != server_piece_color
     )
 
     move = Move.objects.create(
         game=game,
-        move_number=data['move_number'],
-        from_square=data['from'],
-        to_square=data['to'],
-        piece_type=data['piece_type'],
-        piece_color=data['piece_color'],
-        promotion=data.get('promotion'),
+        move_number=game.moves.count() + 1,
+        from_square=chess.square_name(chess_move.from_square),
+        to_square=chess.square_name(chess_move.to_square),
+        piece_type=piece_type_name(moving_piece),
+        piece_color=server_piece_color,
+        promotion=data.get('promotion') if data.get('promotion') in PROMOTION_PIECES else None,
     )
 
     board.push(chess_move)
     outcome = evaluate_board_outcome(board)
 
-    if outcome['finished'] or data.get('game_finished'):
+    if outcome['finished']:
         game.status = 'finished'
         game.active_clock_color = ''
         game.clock_started_at = None
@@ -598,10 +690,6 @@ def save_move(request, game_id):
 
         if outcome.get('result') in ('white', 'black', 'draw'):
             game.result = outcome['result']
-        elif data.get('winner') in ('white', 'black'):
-            game.result = data['winner']
-        elif data.get('result') == 'draw':
-            game.result = 'draw'
 
         game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at', 'draw_offer_by_color'])
         apply_rating_after_game(game)
@@ -633,11 +721,15 @@ def save_move(request, game_id):
 
 @login_required
 @require_POST
+@rate_limit(20, 60, 'mark-finished')
 def mark_finished(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
 
-    data = json.loads(request.body)
+    try:
+        data = parse_json_body(request)
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
 
     if data.get('reason') == 'timeout' and data.get('loser') in ('white', 'black'):
         apply_clock_elapsed(game)
@@ -661,16 +753,21 @@ def mark_finished(request, game_id):
             'result': game.result,
         })
 
+    board, board_error = board_from_game_moves(game)
+
+    if board_error:
+        return JsonResponse({'error': 'A posicao salva da partida esta invalida.'}, status=409)
+
+    outcome = evaluate_board_outcome(board)
+
+    if not outcome['finished']:
+        return JsonResponse({'error': 'A partida ainda nao terminou no servidor.'}, status=409)
+
     game.status = 'finished'
+    game.result = outcome['result']
     game.active_clock_color = ''
     game.clock_started_at = None
     game.draw_offer_by_color = ''
-
-    if data.get('winner') in ('white', 'black'):
-        game.result = data['winner']
-    elif data.get('result') == 'draw':
-        game.result = 'draw'
-
     game.save(update_fields=['status', 'result', 'active_clock_color', 'clock_started_at', 'draw_offer_by_color'])
     apply_rating_after_game(game)
 
@@ -686,6 +783,7 @@ def mark_finished(request, game_id):
 
 @login_required
 @require_POST
+@rate_limit(20, 60, 'offer-draw')
 def offer_draw(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
@@ -718,11 +816,15 @@ def offer_draw(request, game_id):
 
 @login_required
 @require_POST
+@rate_limit(20, 60, 'answer-draw')
 def answer_draw_offer(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
     player_color = player_color_for_game(game, request.user)
-    data = json.loads(request.body or '{}')
+    try:
+        data = parse_json_body(request)
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
     accepted = bool(data.get('accepted'))
 
     if game.status == 'finished':
@@ -758,6 +860,7 @@ def answer_draw_offer(request, game_id):
 
 @login_required
 @require_POST
+@rate_limit(10, 60, 'resign')
 def resign_game(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
@@ -786,9 +889,13 @@ def resign_game(request, game_id):
 def game_invitation_wait(request, invitation_id):
     touch_presence(request.user)
     invitation = get_object_or_404(GameInvitation, id=invitation_id, creator=request.user)
+    invitation_accept_url = request.build_absolute_uri(
+        reverse('accept_invitation_link', args=[invitation.token])
+    )
 
     return render(request, 'games/game_invitation_wait.html', {
         'invitation': invitation,
+        'invitation_accept_url': invitation_accept_url,
     })
 
 
@@ -808,6 +915,7 @@ def invitation_status(request, invitation_id):
 
 @login_required
 @require_POST
+@rate_limit(20, 60, 'cancel-invitation')
 def cancel_invitation(request, invitation_id):
     touch_presence(request.user)
     invitation = get_object_or_404(GameInvitation, id=invitation_id, creator=request.user)
@@ -830,6 +938,7 @@ def cancel_invitation(request, invitation_id):
 
 
 @login_required
+@rate_limit(120, 60, 'game-notifications')
 def game_notifications(request):
     touch_presence(request.user)
     invitations = GameInvitation.objects.filter(
@@ -857,6 +966,7 @@ def game_notifications(request):
 
 @login_required
 @require_POST
+@rate_limit(20, 60, 'accept-invitation')
 def accept_invitation(request, invitation_id):
     touch_presence(request.user)
 
@@ -889,7 +999,7 @@ def accept_invitation(request, invitation_id):
         if accepted_count == 0:
             return JsonResponse({'error': 'Esse convite não está mais disponível.'}, status=409)
 
-        invitation = GameInvitation.objects.select_related('creator', 'opponent').get(id=invitation_id)
+        invitation = GameInvitation.objects.select_related('creator', 'opponent').get(id=invitation.id)
         game = create_game_from_invitation(invitation, request.user)
         invitation.game = game
         invitation.save(update_fields=['game'])
@@ -902,7 +1012,54 @@ def accept_invitation(request, invitation_id):
 
 
 @login_required
+@rate_limit(20, 60, 'accept-link')
+def accept_invitation_link(request, token):
+    touch_presence(request.user)
+
+    with transaction.atomic():
+        invitation = get_object_or_404(GameInvitation, token=token, opponent_mode='link')
+
+        if invitation.creator_id == request.user.id:
+            return redirect('game_invitation_wait', invitation_id=invitation.id)
+
+        if invitation.status != 'pending':
+            if invitation.game_id and (
+                invitation.opponent_id == request.user.id or invitation.creator_id == request.user.id
+            ):
+                return redirect('game_detail', game_id=invitation.game_id)
+
+            return redirect('games_list')
+
+        if invitation.opponent_id and invitation.opponent_id != request.user.id:
+            return redirect('games_list')
+
+        accepted_count = GameInvitation.objects.filter(
+            id=invitation.id,
+            status='pending',
+            opponent_mode='link',
+            opponent__isnull=True,
+        ).exclude(
+            creator=request.user
+        ).update(
+            opponent=request.user,
+            status='accepted',
+            responded_at=timezone.now(),
+        )
+
+        if accepted_count == 0:
+            return redirect('games_list')
+
+        invitation = GameInvitation.objects.select_related('creator', 'opponent').get(id=invitation_id)
+        game = create_game_from_invitation(invitation, request.user)
+        invitation.game = game
+        invitation.save(update_fields=['game'])
+
+    return redirect('game_detail', game_id=game.id)
+
+
+@login_required
 @require_POST
+@rate_limit(20, 60, 'reject-invitation')
 def reject_invitation(request, invitation_id):
     touch_presence(request.user)
     invitation = get_object_or_404(GameInvitation, id=invitation_id, status='pending')
@@ -922,6 +1079,7 @@ def reject_invitation(request, invitation_id):
 
 
 @login_required
+@rate_limit(120, 60, 'game-moves')
 def game_moves(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
@@ -953,7 +1111,7 @@ import chess.engine
 from io import StringIO
 from pathlib import Path
 
-STOCKFISH_PATH = r"C:\Users\lucas\Downloads\stockfish-windows-x86-64-avx2\stockfish\stockfish-windows-x86-64-avx2.exe"
+STOCKFISH_PATH = os.environ.get("STOCKFISH_PATH", "")
 ANALYSIS_LIMIT = chess.engine.Limit(time=0.05)
 INTERNAL_MOVE_PATTERN = re.compile(
     r"^\s*(?:\d+\.\s*)?([a-h][1-8])\s*->\s*([a-h][1-8])"
@@ -976,22 +1134,36 @@ INTERNAL_PROMOTIONS = {
     "n": chess.KNIGHT,
 }
 
+@login_required
 @require_POST
+@rate_limit(30, 60, 'engine-move')
 def engine_move(request):
-    data = json.loads(request.body)
+    try:
+        data = parse_json_body(request)
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
 
-    moves = data.get("moves", [])
-    elo = int(data.get("elo", 1200))
+    try:
+        moves = validate_moves_payload(data.get("moves", []))
+        elo = int(data.get("elo", 1200))
+    except (TypeError, ValueError) as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+
+    if elo not in (500, 800, 1000, 1320, 1600, 2000, 2500):
+        return JsonResponse({'error': 'Elo invalido.'}, status=400)
 
     board = chess.Board()
 
-    for move_data in moves:
-        promotion = PROMOTION_PIECES.get(move_data.get("promotion") or "")
-        uci = f"{move_data['from']}{move_data['to']}{promotion or ''}"
-        move = chess.Move.from_uci(uci)
+    try:
+        for move_data in moves:
+            move = build_move_from_data(move_data)
 
-        if move in board.legal_moves:
+            if move not in board.legal_moves:
+                return JsonResponse({"error": "A partida contém uma jogada ilegal."}, status=400)
+
             board.push(move)
+    except (KeyError, ValueError):
+        return JsonResponse({"error": "Nao consegui ler as jogadas."}, status=400)
 
     if board.is_game_over():
         return JsonResponse({
@@ -1089,11 +1261,20 @@ def choose_engine_move(engine, board, elo):
     return random.choices(candidates, weights=weights, k=1)[0]
 
 
+@login_required
 @require_POST
+@rate_limit(20, 60, 'coach-analysis')
 def coach_analysis(request):
-    data = json.loads(request.body)
-    moves = data.get("moves", [])
+    try:
+        data = parse_json_body(request)
+        moves = validate_moves_payload(data.get("moves", []))
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+
     player_color = data.get("player_color", "white")
+
+    if player_color not in ('white', 'black'):
+        return JsonResponse({'error': 'Cor invalida.'}, status=400)
 
     if not moves:
         return JsonResponse({
@@ -1199,12 +1380,24 @@ def board_from_move_data(moves):
     return board, san_moves
 
 
+@login_required
 @require_POST
+@rate_limit(20, 60, 'trainer-chat')
 def trainer_chat(request):
-    data = json.loads(request.body)
+    try:
+        data = parse_json_body(request)
+        moves = validate_moves_payload(data.get("moves", []))
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+
     question = data.get("question", "").strip()
-    moves = data.get("moves", [])
     player_color = data.get("player_color", "white")
+
+    if player_color not in ('white', 'black'):
+        return JsonResponse({'error': 'Cor invalida.'}, status=400)
+
+    if len(question) > MAX_TRAINER_QUESTION_CHARS:
+        return JsonResponse({'error': 'Pergunta muito longa.'}, status=400)
 
     if not question:
         return JsonResponse({
@@ -1602,6 +1795,8 @@ def read_internal_coordinate_game(pgn_text):
     return game, None
 
 
+@login_required
+@rate_limit(12, 60, 'game-analyzer')
 def game_analyzer(request):
     moves = []
     analysis = []
@@ -1612,10 +1807,12 @@ def game_analyzer(request):
     if request.method == "POST":
         pgn_text = request.POST.get("pgn", "").strip()
 
-        game, parse_error = read_analyzer_game(pgn_text) if pgn_text else (None, None)
+        game, parse_error = read_analyzer_game(pgn_text) if pgn_text and len(pgn_text.encode('utf-8')) <= MAX_PGN_BYTES else (None, None)
 
         if not pgn_text:
             error_message = "Cole um PGN antes de analisar a partida."
+        elif len(pgn_text.encode('utf-8')) > MAX_PGN_BYTES:
+            error_message = "O PGN e muito grande para analisar de uma vez."
         elif not game:
             error_message = parse_error or "Não consegui ler esse PGN. Confira se ele tem jogadas em formato PGN/SAN ou no formato da sua partida."
         elif game.errors:

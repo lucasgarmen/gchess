@@ -12,6 +12,12 @@ Aguardando oponente
 
         {% if invitation.opponent_mode == 'random' %}
             <p>Procurando um jogador aleatorio online...</p>
+        {% elif invitation.opponent_mode == 'link' %}
+            <p>Envie este link para quem vai jogar contra voce.</p>
+            <div class="invite-link-row">
+                <input id="invitation-link" type="text" value="{{ invitation_accept_url }}" readonly>
+                <button id="copy-invitation-link" type="button">Copiar</button>
+            </div>
         {% else %}
             <p>Convite enviado para {{ invitation.opponent.username }}.</p>
         {% endif %}
@@ -35,6 +41,8 @@ Aguardando oponente
     const cancelInvitationUrl = "{% url 'cancel_invitation' invitation.id %}";
     const waitStatus = document.getElementById('invitation-wait-status');
     const cancelInvitationButton = document.getElementById('cancel-invitation');
+    const invitationLinkInput = document.getElementById('invitation-link');
+    const copyInvitationLinkButton = document.getElementById('copy-invitation-link');
     let invitationPollingStopped = false;
 
     function getWaitCSRFToken() {
@@ -119,6 +127,21 @@ Aguardando oponente
         setTimeout(checkInvitationStatus, 1500);
         waitStatus.innerText = data.error || 'Nao foi possivel cancelar a solicitacao.';
     });
+
+    if (copyInvitationLinkButton && invitationLinkInput) {
+        copyInvitationLinkButton.addEventListener('click', async function () {
+            invitationLinkInput.select();
+            invitationLinkInput.setSelectionRange(0, invitationLinkInput.value.length);
+
+            try {
+                await navigator.clipboard.writeText(invitationLinkInput.value);
+                waitStatus.innerText = 'Link copiado. Aguardando oponente...';
+            } catch (error) {
+                document.execCommand('copy');
+                waitStatus.innerText = 'Link copiado. Aguardando oponente...';
+            }
+        });
+    }
 
     checkInvitationStatus();
 </script>

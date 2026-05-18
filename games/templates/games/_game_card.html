@@ -5,7 +5,7 @@
     {% if game.title %}
         {{ game.title }}
     {% else %}
-        Partida {{ game.id }}
+        {{ game.white_player }} vs {{ game.black_player }}
     {% endif %}
     </h2>
     <p>

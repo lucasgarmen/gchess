@@ -11,6 +11,7 @@ urlpatterns = [
     path('convites/<int:invitation_id>/aguardando/', views.game_invitation_wait, name='game_invitation_wait'),
     path('convites/<int:invitation_id>/status/', views.invitation_status, name='invitation_status'),
     path('convites/<int:invitation_id>/cancelar/', views.cancel_invitation, name='cancel_invitation'),
+    path('convites/link/<uuid:token>/entrar/', views.accept_invitation_link, name='accept_invitation_link'),
     path('convites/<int:invitation_id>/aceitar/', views.accept_invitation, name='accept_invitation'),
     path('convites/<int:invitation_id>/recusar/', views.reject_invitation, name='reject_invitation'),
     path('notificacoes/partidas/', views.game_notifications, name='game_notifications'),
