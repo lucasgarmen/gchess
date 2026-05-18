@@ -12,6 +12,8 @@ import os
 import chess
 import random
 import re
+from io import StringIO
+from pathlib import Path
 from django.http import JsonResponse
 from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -615,9 +617,14 @@ def game_create(request):
 @login_required
 @require_POST
 @rate_limit(60, 60, 'save-move')
+@transaction.atomic
 def save_move(request, game_id):
     touch_presence(request.user)
-    game = get_game_for_user(game_id, request.user)
+    game = get_object_or_404(
+        ChessGame.objects.select_for_update(),
+        game_access_filter(request.user),
+        id=game_id,
+    )
     try:
         data = parse_json_body(request)
     except ValueError as exc:
@@ -644,12 +651,6 @@ def save_move(request, game_id):
     if player_color != expected_color:
         return JsonResponse({'error': 'Nao e sua vez.'}, status=403)
 
-    if player_color and data.get('piece_color') != player_color:
-        return JsonResponse({'error': 'Você só pode mover suas próprias peças.'}, status=403)
-
-    if data.get('piece_color') != expected_color:
-        return JsonResponse({'error': 'Não é a vez dessa cor.'}, status=400)
-
     board, board_error = board_from_game_moves(game)
 
     if board_error:
@@ -669,6 +670,9 @@ def save_move(request, game_id):
         return JsonResponse({'error': 'Jogada invalida.'}, status=400)
 
     server_piece_color = 'white' if moving_piece.color == chess.WHITE else 'black'
+
+    if server_piece_color != expected_color:
+        return JsonResponse({'error': 'Nao e a vez dessa cor.'}, status=400)
 
     if server_piece_color != player_color:
         return JsonResponse({'error': 'Voce so pode mover suas proprias pecas.'}, status=403)
@@ -1192,8 +1196,6 @@ def game_chat(request, game_id):
 
 import chess.pgn
 import chess.engine
-from io import StringIO
-from pathlib import Path
 
 STOCKFISH_PATH = os.environ.get("STOCKFISH_PATH", "")
 ANALYSIS_LIMIT = chess.engine.Limit(time=0.05)
@@ -1217,6 +1219,16 @@ INTERNAL_PROMOTIONS = {
     "cavalo": chess.KNIGHT,
     "n": chess.KNIGHT,
 }
+
+
+def stockfish_is_configured():
+    return bool(STOCKFISH_PATH and Path(STOCKFISH_PATH).exists())
+
+
+def stockfish_missing_response():
+    return JsonResponse({
+        "error": "Stockfish nao esta configurado ou nao foi encontrado em STOCKFISH_PATH.",
+    }, status=500)
 
 @login_required
 @require_POST
@@ -1254,14 +1266,12 @@ def engine_move(request):
             "error": "A partida já terminou.",
         }, status=400)
 
-    if not Path(STOCKFISH_PATH).exists():
-        return JsonResponse({
-            "error": "Não encontrei o Stockfish na rota configurada.",
-        }, status=500)
+    if not stockfish_is_configured():
+        return stockfish_missing_response()
 
-    engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-
+    engine = None
     try:
+        engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
         skill_level = LOW_ELO_SKILL_LEVELS.get(elo)
 
         if skill_level is not None and "Skill Level" in engine.options:
@@ -1310,7 +1320,8 @@ def engine_move(request):
         }, status=500)
 
     finally:
-        engine.quit()
+        if engine:
+            engine.quit()
 
 
 def choose_engine_move(engine, board, elo):
@@ -1366,10 +1377,8 @@ def coach_analysis(request):
             "error": "Não há jogadas para analisar.",
         }, status=400)
 
-    if not Path(STOCKFISH_PATH).exists():
-        return JsonResponse({
-            "error": "Não encontrei o Stockfish na rota configurada.",
-        }, status=500)
+    if not stockfish_is_configured():
+        return stockfish_missing_response()
 
     board = chess.Board()
 
@@ -1403,9 +1412,9 @@ def coach_analysis(request):
             "comment": "",
         })
 
-    engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-
+    engine = None
     try:
+        engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
         before = engine.analyse(board, ANALYSIS_LIMIT)
         before_score = score_to_cp(before["score"].white())
         best_move = before.get("pv", [played_move])[0]
@@ -1442,7 +1451,8 @@ def coach_analysis(request):
             "error": f"Não foi possível analisar a jogada: {exc}",
         }, status=500)
     finally:
-        engine.quit()
+        if engine:
+            engine.quit()
 
 
 def build_move_from_data(move_data):
@@ -1498,14 +1508,12 @@ def trainer_chat(request):
             "error": "Não consegui ler a posição atual.",
         }, status=400)
 
-    if not Path(STOCKFISH_PATH).exists():
-        return JsonResponse({
-            "error": "Não encontrei o Stockfish na rota configurada.",
-        }, status=500)
+    if not stockfish_is_configured():
+        return stockfish_missing_response()
 
-    engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-
+    engine = None
     try:
+        engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
         answer = build_trainer_chat_answer(engine, board, san_moves, question, player_color, language)
 
         return JsonResponse({
@@ -1516,7 +1524,8 @@ def trainer_chat(request):
             "error": f"Não foi possível responder agora: {exc}",
         }, status=500)
     finally:
-        engine.quit()
+        if engine:
+            engine.quit()
 
 
 def build_trainer_chat_answer(engine, board, san_moves, question, player_color, language='pt'):
@@ -1949,7 +1958,7 @@ def game_analyzer(request):
             error_message = "O PGN tem erros de formato ou jogadas ilegais. Corrija e tente novamente."
         elif not list(game.mainline_moves()):
             error_message = "O PGN não tem jogadas para analisar."
-        elif not Path(STOCKFISH_PATH).exists():
+        elif not stockfish_is_configured():
             error_message = "Não encontrei o motor de análise na rota configurada."
         else:
             engine = None

@@ -1,0 +1,9 @@
+Django==6.0.5
+asgiref==3.11.1
+chess==1.11.2
+python-chess==1.999
+sqlparse==0.5.5
+tzdata==2026.2
+gunicorn==23.0.0
+whitenoise==6.11.0
+psycopg[binary]==3.2.13

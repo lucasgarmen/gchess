@@ -1,9 +1,11 @@
+import json
+
 import chess
 from django.contrib.auth.models import User
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
-from .models import GameInvitation
+from .models import ChessGame, GameInvitation, Move
 from .views import evaluate_board_outcome, read_analyzer_game, read_internal_coordinate_game
 
 
@@ -81,3 +83,115 @@ class InvitationLinkTests(TestCase):
         self.assertEqual(invitation.opponent, opponent)
         self.assertIsNotNone(invitation.game)
         self.assertRedirects(response, reverse("game_detail", args=[invitation.game_id]))
+
+    def test_link_invitation_cannot_be_accepted_twice(self):
+        creator = User.objects.create_user(username="creator", password="pass")
+        first_opponent = User.objects.create_user(username="first", password="pass")
+        second_opponent = User.objects.create_user(username="second", password="pass")
+        invitation = GameInvitation.objects.create(
+            creator=creator,
+            opponent_mode="link",
+            creator_color="white",
+        )
+
+        self.client.force_login(first_opponent)
+        first_response = self.client.get(reverse("accept_invitation_link", args=[invitation.token]))
+
+        invitation.refresh_from_db()
+        first_game_id = invitation.game_id
+        self.assertRedirects(first_response, reverse("game_detail", args=[first_game_id]))
+
+        self.client.force_login(second_opponent)
+        second_response = self.client.get(reverse("accept_invitation_link", args=[invitation.token]))
+
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.opponent, first_opponent)
+        self.assertEqual(invitation.game_id, first_game_id)
+        self.assertEqual(ChessGame.objects.count(), 1)
+        self.assertRedirects(second_response, reverse("games_list"))
+
+
+class GameAccessTests(TestCase):
+    def test_user_cannot_access_other_users_game(self):
+        owner = User.objects.create_user(username="owner", password="pass")
+        intruder = User.objects.create_user(username="intruder", password="pass")
+        game = ChessGame.objects.create(
+            owner=owner,
+            white_user=owner,
+            white_player=owner.username,
+            black_player="Guest",
+        )
+
+        self.client.force_login(intruder)
+        response = self.client.get(reverse("game_detail", args=[game.id]))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_user_cannot_move_opponents_piece(self):
+        white = User.objects.create_user(username="white", password="pass")
+        black = User.objects.create_user(username="black", password="pass")
+        game = ChessGame.objects.create(
+            owner=white,
+            white_user=white,
+            black_user=black,
+            white_player=white.username,
+            black_player=black.username,
+        )
+        Move.objects.create(
+            game=game,
+            move_number=1,
+            from_square="e2",
+            to_square="e4",
+            piece_type="pawn",
+            piece_color="white",
+        )
+
+        self.client.force_login(white)
+        response = self.client.post(
+            reverse("save_move", args=[game.id]),
+            data=json.dumps({
+                "from": "e7",
+                "to": "e5",
+                "piece_color": "white",
+                "piece_type": "pawn",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(game.moves.count(), 1)
+
+    def test_server_does_not_trust_client_piece_color_for_legal_move(self):
+        white = User.objects.create_user(username="white", password="pass")
+        black = User.objects.create_user(username="black", password="pass")
+        game = ChessGame.objects.create(
+            owner=white,
+            white_user=white,
+            black_user=black,
+            white_player=white.username,
+            black_player=black.username,
+        )
+
+        self.client.force_login(white)
+        response = self.client.post(
+            reverse("save_move", args=[game.id]),
+            data=json.dumps({
+                "from": "e2",
+                "to": "e4",
+                "piece_color": "black",
+                "piece_type": "pawn",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        move = game.moves.get()
+        self.assertEqual(move.piece_color, "white")
+
+    def test_invalid_pgn_does_not_break_analyzer(self):
+        user = User.objects.create_user(username="player", password="pass")
+
+        self.client.force_login(user)
+        response = self.client.post(reverse("game_analyzer"), data={"pgn": "this is not pgn"})
+
+        self.assertEqual(response.status_code, 200)
