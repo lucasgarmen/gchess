@@ -7,12 +7,15 @@
 
     <title>{% block title %}Xadrez{% endblock %}</title>
 
-    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=20">
+    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=24">
 </head>
 
 <body>
 
     <nav>
+    <a class="nav-brand" href="{% url 'home' %}" aria-label="GChess">
+        <img src="{% static 'games/gchess-logo.png' %}" alt="GChess">
+    </a>
     <a href="{% url 'home' %}">Início</a>
     <a href="{% url 'games_list' %}">Partidas</a>
     <a href="{% url 'game_create' %}">Nova Partida</a>

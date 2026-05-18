@@ -958,6 +958,34 @@ nav {
     padding: 12px 14px;
 }
 
+.nav-brand {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    display: inline-flex;
+    height: 54px;
+    justify-content: center;
+    margin-right: 4px;
+    overflow: hidden;
+    padding: 0;
+    transform: translateY(15px);
+    width: 176px;
+}
+
+.nav-brand:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.nav-brand img {
+    display: block;
+    height: 100%;
+    object-fit: cover;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+    transform: scale(1.55);
+    width: 100%;
+}
+
 nav a,
 nav > span {
     margin-right: 0;
@@ -1008,6 +1036,12 @@ nav > span {
         justify-content: center;
         text-align: center;
         width: 100%;
+    }
+
+    .nav-brand {
+        align-self: center;
+        height: 58px;
+        width: 190px;
     }
 
     .notification-panel {
