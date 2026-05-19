@@ -8,10 +8,12 @@ from .models import ChessGame
 from .forms import ChessGameForm
 from django.contrib.auth.decorators import login_required
 import json
+import logging
 import os
 import chess
 import random
 import re
+import shutil
 from io import StringIO
 from pathlib import Path
 from django.http import JsonResponse
@@ -39,6 +41,7 @@ MAX_ENGINE_MOVES = 300
 MAX_PGN_BYTES = 80 * 1024
 MAX_TRAINER_QUESTION_CHARS = 500
 MAX_CHAT_MESSAGE_CHARS = 500
+logger = logging.getLogger(__name__)
 
 
 def rate_limit(limit, window_seconds, key_prefix):
@@ -1197,7 +1200,6 @@ def game_chat(request, game_id):
 import chess.pgn
 import chess.engine
 
-STOCKFISH_PATH = os.environ.get("STOCKFISH_PATH", "")
 ANALYSIS_LIMIT = chess.engine.Limit(time=0.05)
 INTERNAL_MOVE_PATTERN = re.compile(
     r"^\s*(?:\d+\.\s*)?([a-h][1-8])\s*->\s*([a-h][1-8])"
@@ -1221,14 +1223,46 @@ INTERNAL_PROMOTIONS = {
 }
 
 
+def configured_stockfish_path():
+    stockfish_path = os.getenv("STOCKFISH_PATH", "").strip()
+
+    if not stockfish_path:
+        discovered_path = shutil.which("stockfish")
+
+        if discovered_path:
+            logger.info("Using Stockfish found on PATH: %s", discovered_path)
+            return discovered_path, ""
+
+        return "", "STOCKFISH_PATH is not configured and stockfish was not found on PATH."
+
+    if Path(stockfish_path).exists():
+        return stockfish_path, ""
+
+    discovered_path = shutil.which(stockfish_path)
+
+    if discovered_path:
+        logger.info("Using Stockfish from STOCKFISH_PATH: %s", discovered_path)
+        return discovered_path, ""
+
+    return "", f"Stockfish was not found at STOCKFISH_PATH={stockfish_path!r}."
+
+
 def stockfish_is_configured():
-    return bool(STOCKFISH_PATH and Path(STOCKFISH_PATH).exists())
+    _stockfish_path, error_message = configured_stockfish_path()
+    return not error_message
 
 
-def stockfish_missing_response():
+def stockfish_missing_response(error_message=""):
+    if not error_message:
+        _stockfish_path, error_message = configured_stockfish_path()
+
+    logger.warning("Stockfish unavailable: %s", error_message)
     return JsonResponse({
-        "error": "Stockfish nao esta configurado ou nao foi encontrado em STOCKFISH_PATH.",
-    }, status=500)
+        "error": (
+            "Stockfish is not available. Check the STOCKFISH_PATH environment variable "
+            f"and make sure the executable exists. Detail: {error_message}"
+        ),
+    }, status=503)
 
 @login_required
 @require_POST
@@ -1266,12 +1300,13 @@ def engine_move(request):
             "error": "A partida já terminou.",
         }, status=400)
 
-    if not stockfish_is_configured():
-        return stockfish_missing_response()
+    stockfish_path, stockfish_error = configured_stockfish_path()
+    if stockfish_error:
+        return stockfish_missing_response(stockfish_error)
 
     engine = None
     try:
-        engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+        engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
         skill_level = LOW_ELO_SKILL_LEVELS.get(elo)
 
         if skill_level is not None and "Skill Level" in engine.options:
@@ -1315,6 +1350,7 @@ def engine_move(request):
 
         return JsonResponse(response)
     except (chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError) as exc:
+        logger.exception("Stockfish failed while calculating an engine move.")
         return JsonResponse({
             "error": f"Não foi possível calcular a jogada: {exc}",
         }, status=500)
@@ -1377,8 +1413,9 @@ def coach_analysis(request):
             "error": "Não há jogadas para analisar.",
         }, status=400)
 
-    if not stockfish_is_configured():
-        return stockfish_missing_response()
+    stockfish_path, stockfish_error = configured_stockfish_path()
+    if stockfish_error:
+        return stockfish_missing_response(stockfish_error)
 
     board = chess.Board()
 
@@ -1414,7 +1451,7 @@ def coach_analysis(request):
 
     engine = None
     try:
-        engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+        engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
         before = engine.analyse(board, ANALYSIS_LIMIT)
         before_score = score_to_cp(before["score"].white())
         best_move = before.get("pv", [played_move])[0]
@@ -1447,6 +1484,7 @@ def coach_analysis(request):
             "best": best_san,
         })
     except (chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError) as exc:
+        logger.exception("Stockfish failed while analyzing a coach move.")
         return JsonResponse({
             "error": f"Não foi possível analisar a jogada: {exc}",
         }, status=500)
@@ -1508,18 +1546,20 @@ def trainer_chat(request):
             "error": "Não consegui ler a posição atual.",
         }, status=400)
 
-    if not stockfish_is_configured():
-        return stockfish_missing_response()
+    stockfish_path, stockfish_error = configured_stockfish_path()
+    if stockfish_error:
+        return stockfish_missing_response(stockfish_error)
 
     engine = None
     try:
-        engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+        engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
         answer = build_trainer_chat_answer(engine, board, san_moves, question, player_color, language)
 
         return JsonResponse({
             "answer": answer,
         })
     except (chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError) as exc:
+        logger.exception("Stockfish failed while answering trainer chat.")
         return JsonResponse({
             "error": f"Não foi possível responder agora: {exc}",
         }, status=500)
@@ -1947,6 +1987,7 @@ def game_analyzer(request):
         pgn_text = request.POST.get("pgn", "").strip()
 
         game, parse_error = read_analyzer_game(pgn_text) if pgn_text and len(pgn_text.encode('utf-8')) <= MAX_PGN_BYTES else (None, None)
+        stockfish_path, stockfish_error = configured_stockfish_path()
 
         if not pgn_text:
             error_message = "Cole um PGN antes de analisar a partida."
@@ -1958,14 +1999,15 @@ def game_analyzer(request):
             error_message = "O PGN tem erros de formato ou jogadas ilegais. Corrija e tente novamente."
         elif not list(game.mainline_moves()):
             error_message = "O PGN não tem jogadas para analisar."
-        elif not stockfish_is_configured():
+        elif stockfish_error:
+            logger.warning("Stockfish unavailable for PGN analyzer: %s", stockfish_error)
             error_message = "Não encontrei o motor de análise na rota configurada."
         else:
             engine = None
             board = game.board()
 
             try:
-                engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+                engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
 
                 move_number = 1
                 san_moves = []
@@ -2030,6 +2072,7 @@ def game_analyzer(request):
 
                     move_number += 1
             except (OSError, chess.engine.EngineError, chess.engine.EngineTerminatedError, ValueError) as exc:
+                logger.exception("Stockfish failed while analyzing a PGN.")
                 moves = []
                 analysis = []
                 opening_name = ""

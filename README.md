@@ -62,7 +62,7 @@ DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=
 DATABASE_URL=
 DJANGO_SECURE_SSL_REDIRECT=False
-STOCKFISH_PATH=C:\path\to\stockfish.exe
+STOCKFISH_PATH=C:\Users\lucas\Downloads\stockfish-windows-x86-64-avx2\stockfish\stockfish-windows-x86-64-avx2.exe
 EMAIL_BACKEND=
 EMAIL_HOST=smtp.example.com
 EMAIL_PORT=587
@@ -112,9 +112,10 @@ Local development:
 
 Render:
 
-- The app expects `STOCKFISH_PATH` to point to an executable available in the deployed environment.
+- `build.sh` tries to install Stockfish with `apt-get`.
+- Set `STOCKFISH_PATH=/usr/games/stockfish` in Render when using the apt package.
 - If Stockfish is not installed or the path is wrong, bot/analysis endpoints return a clear JSON error instead of crashing the app.
-- One practical option is to include a Linux Stockfish binary in the deployment image or install it during build if your Render setup allows it, then set `STOCKFISH_PATH` to that executable path.
+- If Render cannot install the package, deploy still continues; engine features stay unavailable until `STOCKFISH_PATH` points to a real binary.
 
 ## Deploy on Render
 
@@ -147,12 +148,14 @@ DJANGO_ALLOWED_HOSTS=your-service-name.onrender.com
 DJANGO_CSRF_TRUSTED_ORIGINS=https://your-service-name.onrender.com
 DATABASE_URL=postgres://...
 DJANGO_SECURE_SSL_REDIRECT=True
-STOCKFISH_PATH=/path/to/stockfish
+STOCKFISH_PATH=/usr/games/stockfish
 ```
 
 `build.sh` runs:
 
 ```bash
+apt-get update
+apt-get install -y stockfish
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 python manage.py collectstatic --no-input

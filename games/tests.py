@@ -1,4 +1,6 @@
 import json
+import os
+from unittest.mock import patch
 
 import chess
 from django.contrib.auth.models import User
@@ -195,3 +197,18 @@ class GameAccessTests(TestCase):
         response = self.client.post(reverse("game_analyzer"), data={"pgn": "this is not pgn"})
 
         self.assertEqual(response.status_code, 200)
+
+    def test_missing_stockfish_returns_clear_engine_error(self):
+        user = User.objects.create_user(username="stockfish-user", password="pass")
+
+        self.client.force_login(user)
+
+        with patch.dict(os.environ, {"STOCKFISH_PATH": r"C:\missing\stockfish.exe"}), patch("games.views.shutil.which", return_value=None):
+            response = self.client.post(
+                reverse("engine_move"),
+                data=json.dumps({"moves": [], "elo": 1320}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("Stockfish is not available", response.json()["error"])
