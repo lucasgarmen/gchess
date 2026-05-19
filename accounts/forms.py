@@ -4,6 +4,13 @@ from django import forms
 from django.contrib.auth.models import User
 
 
+class PasswordRecoveryForm(forms.Form):
+    email = forms.EmailField(
+        label='Email',
+        widget=forms.EmailInput(attrs={'autocomplete': 'email'}),
+    )
+
+
 class RegisterForm(forms.Form):
     username = forms.CharField(
         label='Usuario',

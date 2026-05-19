@@ -63,6 +63,14 @@ DJANGO_CSRF_TRUSTED_ORIGINS=
 DATABASE_URL=
 DJANGO_SECURE_SSL_REDIRECT=False
 STOCKFISH_PATH=C:\path\to\stockfish.exe
+EMAIL_BACKEND=
+EMAIL_HOST=smtp.example.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=
+EMAIL_HOST_PASSWORD=
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+DEFAULT_FROM_EMAIL=GChess <noreply@example.com>
 ```
 
 Run migrations and start the app:
@@ -87,6 +95,10 @@ python manage.py test
 - `DJANGO_CSRF_TRUSTED_ORIGINS`: comma-separated HTTPS origins, for example `https://gchess.onrender.com`.
 - `DATABASE_URL`: PostgreSQL URL in production. If empty, local SQLite is used.
 - `STOCKFISH_PATH`: path to the Stockfish executable.
+- `EMAIL_BACKEND`: optional email backend override. Leave empty to use SMTP when `EMAIL_HOST` is set, or console email when it is not.
+- `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`: SMTP server settings for password recovery emails.
+- `EMAIL_USE_TLS`, `EMAIL_USE_SSL`: SMTP security settings.
+- `DEFAULT_FROM_EMAIL`: sender address used by password recovery emails.
 - `DJANGO_SECURE_SSL_REDIRECT`: use `True` in production on Render.
 - `DJANGO_SECURE_HSTS_SECONDS`: optional, defaults to `31536000` when `DEBUG=False`.
 

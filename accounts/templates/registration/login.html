@@ -40,6 +40,10 @@
             {% tr "show_password" %}
         </label>
 
+        <p class="auth-secondary-link">
+            <a href="{% url 'password_reset' %}">{% tr "forgot_password" %}</a>
+        </p>
+
         <button type="submit">{% tr "login" %}</button>
 
         <p class="auth-switch">

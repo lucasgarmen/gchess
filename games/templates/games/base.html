@@ -36,6 +36,8 @@
     {% if user.is_authenticated %}
         <span>{% tr "nav_hello" %}, {{ user.username }}{% if user.player_profile %} · {% tr "nav_elo" %} {{ user.player_profile.elo }}{% endif %}</span>
 
+        <a href="{% url 'password_change' %}">{% tr "nav_change_password" %}</a>
+
         <div class="notification-area">
             <button id="notification-toggle" type="button">{% tr "nav_invitations" %} <span id="notification-count" hidden>0</span></button>
             <div id="notification-panel" class="notification-panel" hidden>

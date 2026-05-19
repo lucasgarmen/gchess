@@ -318,6 +318,33 @@ a:hover {
     margin-top: 16px;
 }
 
+.auth-help {
+    margin: 0 0 18px;
+}
+
+.auth-secondary-link {
+    margin: -4px 0 16px;
+}
+
+.auth-secondary-link a {
+    font-size: 14px;
+}
+
+.temporary-password-box {
+    background-color: #141310;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    color: var(--accent-strong);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0;
+    margin: 16px 0;
+    overflow-wrap: anywhere;
+    padding: 14px;
+    text-align: center;
+}
+
 .password-toggle {
     align-items: center;
     color: #cfcfcf;

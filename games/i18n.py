@@ -6,6 +6,12 @@ LANGUAGE_OPTIONS = [
 
 DEFAULT_LANGUAGE = 'pt'
 
+DJANGO_LANGUAGE_CODES = {
+    'pt': 'pt-br',
+    'es': 'es',
+    'en': 'en',
+}
+
 TRANSLATIONS = {
     'pt': {
         'nav_home': 'Início',
@@ -19,6 +25,7 @@ TRANSLATIONS = {
         'nav_logout': 'Sair',
         'nav_login': 'Entrar',
         'nav_register': 'Criar conta',
+        'nav_change_password': 'Alterar senha',
         'language': 'Idioma',
         'home_title': 'Jogar contra o computador',
         'bot_elo': 'Elo do Bot:',
@@ -113,6 +120,42 @@ TRANSLATIONS = {
         'password_help': 'Deve ter letras e números.',
         'confirm_password': 'Confirmar senha',
         'already_account': 'Já tem conta?',
+        'forgot_password': 'Esqueceu sua senha?',
+        'reset_password': 'Recuperar senha',
+        'reset_password_help': 'Informe o email da sua conta e enviaremos um link para criar uma nova senha.',
+        'send_reset_email': 'Enviar email de recuperação',
+        'reset_email_sent': 'Email enviado',
+        'reset_email_sent_help': 'Se existir uma conta com esse email, você receberá um link para recuperar sua senha.',
+        'temporary_password_help': 'Informe o email da sua conta e enviaremos uma senha temporária.',
+        'send_temporary_password': 'Enviar senha temporária',
+        'temporary_password_sent_help': 'Se existir uma conta com esse email, você receberá uma senha temporária para entrar.',
+        'temporary_password_email_subject': 'Sua senha temporária do GChess',
+        'temporary_password_email_body': 'Olá, {username}.\n\nRecebemos uma solicitação para recuperar sua conta no GChess.\n\nSua senha temporária é: {password}\n\nEntre com essa senha e altere-a em seguida na opção Alterar senha.\n\nSe você não pediu isso, entre na sua conta e altere a senha.',
+        'reset_confirmation_help': 'Informe o email da sua conta e enviaremos um botão para confirmar a recuperação.',
+        'send_reset_confirmation': 'Enviar email de confirmação',
+        'reset_confirmation_sent_help': 'Se existir uma conta com esse email, você receberá uma mensagem para confirmar a recuperação. Se não pediu isso, ignore o email.',
+        'reset_confirmation_email_subject': 'Confirmar recuperação de senha - GChess',
+        'reset_confirmation_email_greeting': 'Olá, {username}.',
+        'reset_confirmation_email_intro': 'Recebemos uma solicitação para gerar uma nova senha temporária para sua conta no GChess. Se foi você, clique no botão abaixo.',
+        'reset_confirmation_email_ignore': 'Se você não pediu uma nova senha, ignore este email. Sua senha atual continuará igual.',
+        'reset_confirmation_email_fallback': 'Se o botão não funcionar, copie e abra este link:',
+        'reset_confirmation_email_body': 'Olá, {username}.\n\nRecebemos uma solicitação para gerar uma nova senha temporária para sua conta no GChess.\n\nSe foi você, abra este link:\n{reset_url}\n\nSe você não pediu uma nova senha, ignore este email. Sua senha atual continuará igual.',
+        'reset_confirmation_button': 'Gerar nova senha',
+        'temporary_password_ready': 'Senha temporária criada',
+        'temporary_password_ready_help': 'Use esta senha temporária para entrar na sua conta:',
+        'temporary_password_change_help': 'Depois de entrar, use a opção Alterar senha para criar uma senha definitiva.',
+        'set_new_password': 'Criar nova senha',
+        'current_password': 'Senha atual',
+        'new_password': 'Nova senha',
+        'new_password_confirm': 'Confirmar nova senha',
+        'change_password': 'Alterar senha',
+        'password_changed': 'Senha alterada',
+        'password_changed_help': 'Sua senha foi atualizada com sucesso.',
+        'email_send_error': 'Não foi possível enviar o email agora. Confira a configuração de email e tente novamente.',
+        'invalid_reset_link': 'Link inválido',
+        'invalid_reset_link_help': 'Este link de recuperação venceu ou já foi usado. Solicite um novo email.',
+        'password_reset_complete': 'Senha alterada',
+        'password_reset_complete_help': 'Sua senha foi atualizada. Você já pode entrar com a nova senha.',
     },
     'es': {
         'nav_home': 'Inicio',
@@ -126,6 +169,7 @@ TRANSLATIONS = {
         'nav_logout': 'Salir',
         'nav_login': 'Entrar',
         'nav_register': 'Crear cuenta',
+        'nav_change_password': 'Cambiar contraseña',
         'language': 'Idioma',
         'home_title': 'Jugar contra la computadora',
         'bot_elo': 'Elo del bot:',
@@ -220,6 +264,42 @@ TRANSLATIONS = {
         'password_help': 'Debe tener letras y números.',
         'confirm_password': 'Confirmar contraseña',
         'already_account': '¿Ya tienes cuenta?',
+        'forgot_password': '¿Olvidaste tu contraseña?',
+        'reset_password': 'Recuperar contraseña',
+        'reset_password_help': 'Ingresa el email de tu cuenta y te enviaremos un link para crear una nueva contraseña.',
+        'send_reset_email': 'Enviar email de recuperación',
+        'reset_email_sent': 'Email enviado',
+        'reset_email_sent_help': 'Si existe una cuenta con ese email, recibirás un link para recuperar tu contraseña.',
+        'temporary_password_help': 'Ingresa el email de tu cuenta y te enviaremos una contraseña temporal.',
+        'send_temporary_password': 'Enviar contraseña temporal',
+        'temporary_password_sent_help': 'Si existe una cuenta con ese email, recibirás una contraseña temporal para entrar.',
+        'temporary_password_email_subject': 'Tu contraseña temporal de GChess',
+        'temporary_password_email_body': 'Hola, {username}.\n\nRecibimos una solicitud para recuperar tu cuenta en GChess.\n\nTu contraseña temporal es: {password}\n\nEntra con esa contraseña y cámbiala después desde la opción Cambiar contraseña.\n\nSi no pediste esto, entra en tu cuenta y cambia la contraseña.',
+        'reset_confirmation_help': 'Ingresa el email de tu cuenta y te enviaremos un botón para confirmar la recuperación.',
+        'send_reset_confirmation': 'Enviar email de confirmación',
+        'reset_confirmation_sent_help': 'Si existe una cuenta con ese email, recibirás un mensaje para confirmar la recuperación. Si no lo pediste, ignora el email.',
+        'reset_confirmation_email_subject': 'Confirmar recuperación de contraseña - GChess',
+        'reset_confirmation_email_greeting': 'Hola, {username}.',
+        'reset_confirmation_email_intro': 'Recibimos una solicitud para generar una nueva contraseña temporal para tu cuenta en GChess. Si fuiste tú, haz click en el botón de abajo.',
+        'reset_confirmation_email_ignore': 'Si no pediste una nueva contraseña, ignora este email. Tu contraseña actual seguirá igual.',
+        'reset_confirmation_email_fallback': 'Si el botón no funciona, copia y abre este link:',
+        'reset_confirmation_email_body': 'Hola, {username}.\n\nRecibimos una solicitud para generar una nueva contraseña temporal para tu cuenta en GChess.\n\nSi fuiste tú, abre este link:\n{reset_url}\n\nSi no pediste una nueva contraseña, ignora este email. Tu contraseña actual seguirá igual.',
+        'reset_confirmation_button': 'Generar nueva contraseña',
+        'temporary_password_ready': 'Contraseña temporal creada',
+        'temporary_password_ready_help': 'Usa esta contraseña temporal para entrar en tu cuenta:',
+        'temporary_password_change_help': 'Después de entrar, usa la opción Cambiar contraseña para crear una contraseña definitiva.',
+        'set_new_password': 'Crear nueva contraseña',
+        'current_password': 'Contraseña actual',
+        'new_password': 'Nueva contraseña',
+        'new_password_confirm': 'Confirmar nueva contraseña',
+        'change_password': 'Cambiar contraseña',
+        'password_changed': 'Contraseña cambiada',
+        'password_changed_help': 'Tu contraseña fue actualizada correctamente.',
+        'email_send_error': 'No se pudo enviar el email ahora. Revisa la configuración de email e intenta nuevamente.',
+        'invalid_reset_link': 'Link inválido',
+        'invalid_reset_link_help': 'Este link de recuperación venció o ya fue usado. Solicita un nuevo email.',
+        'password_reset_complete': 'Contraseña actualizada',
+        'password_reset_complete_help': 'Tu contraseña fue actualizada. Ya puedes entrar con la nueva contraseña.',
     },
     'en': {
         'nav_home': 'Home',
@@ -233,6 +313,7 @@ TRANSLATIONS = {
         'nav_logout': 'Log out',
         'nav_login': 'Log in',
         'nav_register': 'Create account',
+        'nav_change_password': 'Change password',
         'language': 'Language',
         'home_title': 'Play against the computer',
         'bot_elo': 'Bot Elo:',
@@ -327,6 +408,42 @@ TRANSLATIONS = {
         'password_help': 'Must contain letters and numbers.',
         'confirm_password': 'Confirm password',
         'already_account': 'Already have an account?',
+        'forgot_password': 'Forgot your password?',
+        'reset_password': 'Reset password',
+        'reset_password_help': 'Enter your account email and we will send you a link to create a new password.',
+        'send_reset_email': 'Send reset email',
+        'reset_email_sent': 'Email sent',
+        'reset_email_sent_help': 'If an account exists with that email, you will receive a link to reset your password.',
+        'temporary_password_help': 'Enter your account email and we will send you a temporary password.',
+        'send_temporary_password': 'Send temporary password',
+        'temporary_password_sent_help': 'If an account exists with that email, you will receive a temporary password to log in.',
+        'temporary_password_email_subject': 'Your temporary GChess password',
+        'temporary_password_email_body': 'Hi, {username}.\n\nWe received a request to recover your GChess account.\n\nYour temporary password is: {password}\n\nLog in with this password and then change it from the Change password option.\n\nIf you did not request this, log in to your account and change your password.',
+        'reset_confirmation_help': 'Enter your account email and we will send you a button to confirm the recovery.',
+        'send_reset_confirmation': 'Send confirmation email',
+        'reset_confirmation_sent_help': 'If an account exists with that email, you will receive a message to confirm the recovery. If you did not request it, ignore the email.',
+        'reset_confirmation_email_subject': 'Confirm password recovery - GChess',
+        'reset_confirmation_email_greeting': 'Hi, {username}.',
+        'reset_confirmation_email_intro': 'We received a request to generate a new temporary password for your GChess account. If this was you, click the button below.',
+        'reset_confirmation_email_ignore': 'If you did not request a new password, ignore this email. Your current password will stay the same.',
+        'reset_confirmation_email_fallback': 'If the button does not work, copy and open this link:',
+        'reset_confirmation_email_body': 'Hi, {username}.\n\nWe received a request to generate a new temporary password for your GChess account.\n\nIf this was you, open this link:\n{reset_url}\n\nIf you did not request a new password, ignore this email. Your current password will stay the same.',
+        'reset_confirmation_button': 'Generate new password',
+        'temporary_password_ready': 'Temporary password created',
+        'temporary_password_ready_help': 'Use this temporary password to log in to your account:',
+        'temporary_password_change_help': 'After logging in, use the Change password option to create a permanent password.',
+        'set_new_password': 'Set new password',
+        'current_password': 'Current password',
+        'new_password': 'New password',
+        'new_password_confirm': 'Confirm new password',
+        'change_password': 'Change password',
+        'password_changed': 'Password changed',
+        'password_changed_help': 'Your password was updated successfully.',
+        'email_send_error': 'The email could not be sent right now. Check the email configuration and try again.',
+        'invalid_reset_link': 'Invalid link',
+        'invalid_reset_link_help': 'This reset link expired or was already used. Request a new email.',
+        'password_reset_complete': 'Password changed',
+        'password_reset_complete_help': 'Your password was updated. You can now log in with the new password.',
     },
 }
 
@@ -338,6 +455,28 @@ def normalize_language(language):
 
 def current_language(request):
     return normalize_language(request.session.get('language', DEFAULT_LANGUAGE))
+
+
+def django_language_code(language):
+    return DJANGO_LANGUAGE_CODES[normalize_language(language)]
+
+
+class SessionLanguageMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from django.utils import translation
+
+        language = current_language(request)
+        django_language = django_language_code(language)
+        translation.activate(django_language)
+        request.LANGUAGE_CODE = django_language
+
+        try:
+            return self.get_response(request)
+        finally:
+            translation.deactivate()
 
 
 def t(language, key):
