@@ -11,47 +11,59 @@
 <h1>{% tr "home_title" %}</h1>
 
 <main class="game-layout computer-game-layout">
-<aside class="card computer-panel">
-    <label for="computer-elo">{% tr "bot_elo" %}</label>
+<div class="computer-side">
+    <aside class="card computer-panel">
+        <label for="computer-elo">{% tr "bot_elo" %}</label>
 
-    <select id="computer-elo">
-        <option value="500">ELO 500</option>
-        <option value="800">ELO 800</option>
-        <option value="1000">ELO 1000</option>
-        <option value="1320" selected>ELO 1320</option>
-        <option value="1600">ELO 1600</option>
-        <option value="2000">ELO 2000</option>
-        <option value="2500">ELO 2500</option>
-    </select>
+        <select id="computer-elo">
+            <option value="500">ELO 500</option>
+            <option value="800">ELO 800</option>
+            <option value="1000">ELO 1000</option>
+            <option value="1320" selected>ELO 1320</option>
+            <option value="1600">ELO 1600</option>
+            <option value="2000">ELO 2000</option>
+            <option value="2500">ELO 2500</option>
+        </select>
 
-    <label for="player-color">{% tr "play_as" %}</label>
+        <label for="player-color">{% tr "play_as" %}</label>
 
-    <select id="player-color">
-        <option value="white" selected>{% tr "white" %}</option>
-        <option value="black">{% tr "black" %}</option>
-    </select>
+        <select id="player-color">
+            <option value="white" selected>{% tr "white" %}</option>
+            <option value="black">{% tr "black" %}</option>
+        </select>
 
-    <div class="computer-controls">
-        <button id="toggle-coach" type="button">{% tr "enable_coach" %}</button>
-        <button id="undo-computer-move" type="button">{% tr "undo_move" %}</button>
-        <button id="reset-computer-game" type="button">{% tr "reset_game" %}</button>
+        <div class="computer-controls">
+            <button id="toggle-coach" type="button">{% tr "enable_coach" %}</button>
+            <button id="undo-computer-move" type="button">{% tr "undo_move" %}</button>
+            <button id="reset-computer-game" type="button">{% tr "reset_game" %}</button>
+        </div>
+        <div id="coach-comment" class="coach-comment" hidden></div>
+
+        <div class="trainer-chat">
+            <h2>{% tr "coach_chat" %}</h2>
+            <div id="trainer-chat-log" class="trainer-chat-log"></div>
+            <form id="trainer-chat-form" class="trainer-chat-form">
+                <input
+                    id="trainer-chat-input"
+                    type="text"
+                    placeholder="{% tr "ask_position" %}"
+                    autocomplete="off"
+                >
+                <button id="trainer-chat-submit" type="submit">{% tr "ask" %}</button>
+            </form>
+        </div>
+    </aside>
+    <div id="captured-material" class="captured-material board-captured-material computer-captured-material">
+        <div class="captured-row captured-row-black">
+            <div id="captured-black" class="captured-pieces captured-black"></div>
+            <span id="white-material-advantage" class="material-advantage"></span>
+        </div>
+        <div class="captured-row captured-row-white">
+            <div id="captured-white" class="captured-pieces captured-white"></div>
+            <span id="black-material-advantage" class="material-advantage"></span>
+        </div>
     </div>
-    <div id="coach-comment" class="coach-comment" hidden></div>
-
-    <div class="trainer-chat">
-        <h2>{% tr "coach_chat" %}</h2>
-        <div id="trainer-chat-log" class="trainer-chat-log"></div>
-        <form id="trainer-chat-form" class="trainer-chat-form">
-            <input
-                id="trainer-chat-input"
-                type="text"
-                placeholder="{% tr "ask_position" %}"
-                autocomplete="off"
-            >
-            <button id="trainer-chat-submit" type="submit">{% tr "ask" %}</button>
-        </form>
-    </div>
-</aside>
+</div>
 
     <section class="board-area">
         <div class="board-wrapper">
@@ -91,16 +103,6 @@
 
         <ul id="move-list" style="display: none;"></ul>
         <pre id="pgn-box" class="pgn-box"></pre>
-        <div id="captured-material" class="captured-material">
-            <div class="captured-row">
-                <div id="captured-black" class="captured-pieces captured-black"></div>
-                <span id="white-material-advantage" class="material-advantage"></span>
-            </div>
-            <div class="captured-row">
-                <div id="captured-white" class="captured-pieces captured-white"></div>
-                <span id="black-material-advantage" class="material-advantage"></span>
-            </div>
-        </div>
     </aside>
 </main>
 
@@ -112,6 +114,6 @@
     let PLAYER_COLOR = 'white';
 </script>
 
-<script src="{% static 'games/board.js' %}?v=44"></script>
+<script src="{% static 'games/board.js' %}?v=50"></script>
 
 {% endblock %}

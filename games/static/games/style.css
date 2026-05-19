@@ -1,8 +1,15 @@
+html {
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
 body {
     background-color: #1e1e1e;
     color: white;
     font-family: Arial;
     padding: 24px;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 h1 {
@@ -185,10 +192,36 @@ a:hover {
     padding-top: 10px;
 }
 
+.board-captured-material {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
+        var(--surface);
+    border: 1px solid rgba(240, 217, 181, 0.14);
+    border-radius: 8px;
+    box-sizing: border-box;
+    margin-top: 10px;
+    max-width: calc((var(--square-size) * 8) + 54px);
+    padding: 8px 10px;
+    width: 100%;
+}
+
 .captured-row {
     align-items: center;
     display: flex;
     min-height: 28px;
+}
+
+.board-captured-material .captured-row-black {
+    justify-content: flex-start;
+}
+
+.board-captured-material .captured-row-white {
+    flex-direction: row-reverse;
+    justify-content: flex-start;
+}
+
+.board-captured-material .captured-row-white .material-advantage {
+    text-align: left;
 }
 
 .captured-pieces {
@@ -196,6 +229,11 @@ a:hover {
     display: flex;
     flex: 1;
     min-width: 0;
+    overflow: hidden;
+}
+
+.board-captured-material .captured-row-white .captured-pieces {
+    flex-direction: row-reverse;
 }
 
 .material-advantage {
@@ -466,7 +504,9 @@ button {
 }
 
 .trainer-chat-log {
-    background-color: #111;
+    background:
+        linear-gradient(90deg, rgba(92, 62, 33, 0.16), transparent 18%, rgba(240, 217, 181, 0.04) 48%, rgba(65, 43, 23, 0.16)),
+        #15110d;
     border-radius: 6px;
     box-sizing: border-box;
     display: flex;
@@ -513,6 +553,8 @@ button {
 .game-layout {
     --square-size: clamp(64px, min(10.5vh, 7.4vw), 92px);
     --board-panel-height: calc((var(--square-size) * 8) + 22px);
+    --captured-panel-height: 62px;
+    --board-stack-height: calc(var(--board-panel-height) + var(--captured-panel-height) + 10px);
 
     display: grid;
     grid-template-columns: max-content minmax(280px, 360px);
@@ -528,9 +570,61 @@ button {
     max-width: 1430px;
 }
 
+.computer-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: var(--board-stack-height);
+    min-width: 0;
+    width: 220px;
+}
+
+.computer-side .computer-panel {
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    width: 100%;
+}
+
+.computer-captured-material {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.035)),
+        #342f24;
+    border-color: rgba(240, 217, 181, 0.28);
+    flex: 0 0 var(--captured-panel-height);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+    margin-top: 0;
+}
+
+.computer-captured-material .captured-black .captured-piece {
+    filter: brightness(0.92) contrast(1.08) drop-shadow(0 1px 2px rgba(255, 255, 255, 0.24));
+}
+
 .online-game-layout {
     grid-template-columns: minmax(170px, 200px) max-content minmax(280px, 360px);
     max-width: 1400px;
+}
+
+.online-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: var(--board-panel-height);
+    min-width: 0;
+    width: 100%;
+}
+
+.online-side .pgn-panel {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.online-captured-material {
+    flex: 0 0 var(--captured-panel-height);
+    margin-top: 0;
 }
 
 .game-info-card {
@@ -689,6 +783,35 @@ button {
     min-height: 180px;
     overflow: auto;
     padding: 10px;
+    scrollbar-color: #b98245 #21150c;
+    scrollbar-width: thin;
+}
+
+.trainer-chat-log::-webkit-scrollbar {
+    width: 10px;
+}
+
+.trainer-chat-log::-webkit-scrollbar-track {
+    background:
+        linear-gradient(90deg, #1b1008, #2a190d 45%, #120b06);
+    border: 1px solid rgba(240, 217, 181, 0.12);
+    border-radius: 999px;
+    box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.55);
+}
+
+.trainer-chat-log::-webkit-scrollbar-thumb {
+    background:
+        linear-gradient(90deg, rgba(255, 231, 176, 0.72), rgba(154, 93, 38, 0.92) 42%, rgba(93, 54, 25, 0.98));
+    border: 2px solid #21150c;
+    border-radius: 999px;
+    box-shadow:
+        inset 1px 0 0 rgba(255, 235, 190, 0.42),
+        inset -1px 0 0 rgba(52, 27, 12, 0.72);
+}
+
+.trainer-chat-log::-webkit-scrollbar-thumb:hover {
+    background:
+        linear-gradient(90deg, rgba(255, 239, 198, 0.9), rgba(181, 111, 47, 0.98) 42%, rgba(112, 65, 30, 1));
 }
 
 .game-chat-empty {
@@ -920,6 +1043,11 @@ button {
     width: 26px;
 }
 
+.board-captured-material .captured-row-white .captured-piece {
+    margin-left: -8px;
+    margin-right: 0;
+}
+
 .captured-white .captured-piece {
     filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.6));
 }
@@ -1066,24 +1194,153 @@ button {
     }
 }
 
-@media (max-width: 980px) {
+@media (min-width: 981px) and (max-width: 1280px) {
+    .computer-game-layout {
+        --square-size: clamp(54px, min(8vh, 5.6vw), 68px);
+        --board-panel-height: calc((var(--square-size) * 8) + 22px);
+
+        box-sizing: border-box;
+        gap: 14px;
+        grid-template-columns: minmax(240px, min(32vw, 300px)) max-content;
+        justify-content: center;
+        max-width: calc(100vw - 28px);
+        overflow-x: hidden;
+    }
+
+    .computer-game-layout .computer-side {
+        width: 100%;
+    }
+
+    .computer-game-layout .computer-panel {
+        box-sizing: border-box;
+        min-width: 0;
+        max-height: none;
+        overflow: auto;
+        padding: 12px;
+        width: 100%;
+    }
+
+    .computer-game-layout .pgn-panel {
+        grid-column: 1 / -1;
+        height: auto;
+        max-width: calc((var(--square-size) * 8) + 54px);
+        width: 100%;
+    }
+
+    .computer-game-layout .pgn-box {
+        max-height: 160px;
+        min-height: 92px;
+    }
+
+    .computer-game-layout .trainer-chat-log {
+        max-height: 92px;
+        min-height: 64px;
+    }
+}
+
+@media (min-width: 801px) and (max-width: 980px) {
     .game-layout {
-        --square-size: clamp(38px, 10.8vw, 66px);
-        --board-panel-height: auto;
+        --square-size: clamp(34px, min(calc((100vw - 170px) / 8), calc((100svh - 92px) / 8)), 66px);
+        --board-panel-height: calc((var(--square-size) * 8) + 22px);
+        --captured-panel-height: 54px;
+        --board-stack-height: calc(var(--board-panel-height) + var(--captured-panel-height) + 10px);
 
         grid-template-columns: 1fr;
         justify-items: center;
     }
 
     .computer-game-layout {
-        grid-template-columns: 1fr;
+        --square-size: clamp(22px, min(calc((100vw - 138px) / 8), calc((100svh - 210px) / 8)), 58px);
+
+        align-items: start;
+        grid-template-columns: minmax(96px, 32vw) max-content;
+        gap: 6px;
+        justify-content: center;
+    }
+
+    .computer-game-layout .computer-side {
+        height: var(--board-stack-height);
+        width: 100%;
     }
 
     .online-game-layout {
-        grid-template-columns: 1fr;
+        --square-size: clamp(34px, min(calc((100vw - 360px) / 8), 7svh), 56px);
+        --board-panel-height: calc((var(--square-size) * 8) + 22px);
+        --captured-panel-height: 54px;
+
+        gap: 14px;
+        grid-template-columns: max-content minmax(220px, 300px);
+        max-width: calc(100vw - 24px);
+        overflow-x: hidden;
+    }
+
+    .online-game-layout .board-area {
+        min-width: 0;
+    }
+
+    .online-game-layout .online-side {
+        height: var(--board-panel-height);
+        min-width: 0;
+    }
+
+    .online-game-layout .pgn-panel {
+        max-width: none;
+        width: 100%;
+    }
+
+    .online-game-layout .pgn-box {
+        min-height: 120px;
+        max-height: 220px;
     }
 
     .computer-panel {
+        align-self: stretch;
+        box-sizing: border-box;
+        max-height: none;
+        max-width: none;
+        overflow: auto;
+        padding: 10px;
+        width: 100%;
+    }
+
+    .computer-panel label,
+    .computer-panel select,
+    .computer-panel button {
+        font-size: 12px;
+    }
+
+    .computer-panel .computer-controls {
+        gap: 6px;
+    }
+
+    .computer-panel .computer-controls button,
+    .trainer-chat-form button {
+        min-height: 32px;
+        padding: 6px 8px;
+    }
+
+    .computer-panel .trainer-chat h2 {
+        font-size: 14px;
+    }
+
+    .computer-panel .trainer-chat-log {
+        max-height: 96px;
+        min-height: 54px;
+        padding: 8px;
+    }
+
+    .computer-panel .trainer-chat-form input {
+        font-size: 12px;
+        min-height: 32px;
+        padding: 6px 8px;
+    }
+
+    .computer-game-layout .board-area {
+        min-width: 0;
+    }
+
+    .computer-game-layout .pgn-panel {
+        grid-column: 1 / -1;
         max-width: calc((var(--square-size) * 8) + 32px);
         width: 100%;
     }
@@ -1100,6 +1357,351 @@ button {
     .pgn-box {
         min-height: 220px;
         max-height: 320px;
+    }
+}
+
+@media (max-width: 800px) {
+    .game-layout {
+        --square-size: clamp(24px, min(calc((100vw - 56px) / 8), calc((100svh - 230px) / 8)), 62px);
+        --board-panel-height: auto;
+
+        grid-template-columns: 1fr;
+        justify-items: center;
+    }
+
+    .computer-game-layout {
+        --computer-stack-width: min(100%, calc((var(--square-size) * 8) + 204px));
+
+        align-items: start;
+        gap: 8px;
+        grid-template-columns: minmax(0, 1fr);
+        justify-content: center;
+    }
+
+    .computer-game-layout .computer-side,
+    .computer-game-layout .board-area,
+    .computer-game-layout .pgn-panel {
+        max-width: var(--computer-stack-width);
+        width: min(100%, var(--computer-stack-width));
+    }
+
+    .computer-game-layout .board-wrapper {
+        justify-content: center;
+        max-width: var(--computer-stack-width);
+        width: 100%;
+    }
+
+    .computer-game-layout .computer-side {
+        height: auto;
+    }
+
+    .computer-panel {
+        box-sizing: border-box;
+        max-height: min(220px, 38svh);
+        overflow: auto;
+        max-width: none;
+        width: 100%;
+    }
+
+    .computer-captured-material {
+        flex: 0 0 auto;
+    }
+
+    .online-game-layout {
+        grid-template-columns: 1fr;
+        --online-stack-width: min(100%, calc((var(--square-size) * 8) + 64px));
+    }
+
+    .online-game-layout .online-side {
+        height: auto;
+        max-width: var(--online-stack-width);
+        order: 1;
+        width: min(100%, var(--online-stack-width));
+    }
+
+    .online-game-layout .board-area {
+        max-width: var(--online-stack-width);
+        order: 2;
+        width: min(100%, var(--online-stack-width));
+    }
+
+    .online-game-layout .board-wrapper {
+        justify-content: center;
+        max-width: var(--online-stack-width);
+        width: 100%;
+    }
+
+    .online-game-layout .game-info-card {
+        order: 0;
+    }
+
+    .online-side .pgn-panel {
+        max-height: min(260px, 40svh);
+    }
+
+    .online-captured-material {
+        flex: 0 0 auto;
+    }
+
+    .game-info-card {
+        max-width: calc((var(--square-size) * 8) + 32px);
+        width: min(260px, 100%);
+    }
+
+    .pgn-panel {
+        max-width: calc((var(--square-size) * 8) + 32px);
+    }
+}
+
+@media (min-width: 601px) and (max-width: 800px) {
+    .computer-game-layout {
+        --computer-stack-width: min(100%, calc(100vw - 106px));
+
+        gap: 14px;
+        justify-items: center;
+        max-width: 100%;
+    }
+
+    .computer-game-layout .computer-side,
+    .computer-game-layout .board-area,
+    .computer-game-layout .board-wrapper,
+    .computer-game-layout .pgn-panel {
+        max-width: var(--computer-stack-width);
+        width: var(--computer-stack-width);
+    }
+
+    .computer-game-layout .computer-panel,
+    .computer-game-layout .computer-captured-material {
+        max-width: none;
+        width: 100%;
+    }
+
+    .computer-game-layout .board-wrapper {
+        justify-content: center;
+    }
+}
+
+@media (max-width: 600px) {
+    body {
+        padding: 8px;
+    }
+
+    body > h1 {
+        font-size: 18px;
+        margin: 4px 0 6px;
+    }
+
+    .computer-game-layout {
+        --square-size: clamp(14px, min(calc((100vw - 54px) / 8), calc((100svh - 176px) / 8)), 48px);
+        --computer-stack-width: min(100%, calc((var(--square-size) * 8) + 48px));
+
+        gap: 4px;
+        grid-template-columns: minmax(0, 1fr);
+        justify-items: center;
+        margin-top: 4px;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    .online-game-layout {
+        --online-stack-width: min(100%, calc((var(--square-size) * 8) + 48px));
+    }
+
+    .computer-game-layout .computer-side,
+    .computer-game-layout .board-area,
+    .computer-game-layout .pgn-panel {
+        max-width: var(--computer-stack-width);
+        width: min(100%, var(--computer-stack-width));
+    }
+
+    .computer-game-layout .computer-panel {
+        display: grid;
+        gap: 4px;
+        max-height: 96px;
+        overflow: auto;
+        padding: 6px;
+    }
+
+    .computer-panel label {
+        font-size: 10px;
+        margin: 0;
+    }
+
+    .computer-panel select {
+        font-size: 11px;
+        min-height: 24px;
+        padding: 2px 5px;
+    }
+
+    .computer-panel label + select + label {
+        margin-top: 0;
+    }
+
+    .computer-panel .computer-controls {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 4px;
+    }
+
+    .computer-panel .computer-controls button {
+        font-size: 9px;
+        line-height: 1.12;
+        min-height: 24px;
+        padding: 3px;
+    }
+
+    .computer-panel .coach-comment {
+        font-size: 10px;
+        line-height: 1.2;
+        margin-top: 0;
+        padding: 4px;
+    }
+
+    .computer-panel .trainer-chat {
+        margin-top: 0;
+        padding-top: 4px;
+    }
+
+    .computer-panel .trainer-chat h2 {
+        font-size: 11px;
+        margin-bottom: 3px;
+    }
+
+    .computer-panel .trainer-chat-log {
+        gap: 3px;
+        max-height: 28px;
+        min-height: 24px;
+        padding: 4px;
+    }
+
+    .computer-panel .trainer-chat-message {
+        font-size: 10px;
+        line-height: 1.18;
+    }
+
+    .computer-panel .trainer-chat-form {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px;
+        margin-top: 4px;
+    }
+
+    .computer-panel .trainer-chat-form input {
+        font-size: 10px;
+        min-height: 24px;
+        padding: 3px 5px;
+    }
+
+    .computer-panel .trainer-chat-form button {
+        font-size: 10px;
+        min-height: 24px;
+        padding: 3px 7px;
+        width: auto;
+    }
+
+    .computer-captured-material {
+        gap: 1px;
+        min-height: 0;
+        padding: 2px 5px;
+    }
+
+    .computer-captured-material .captured-row {
+        min-height: 16px;
+    }
+
+    .computer-captured-material .captured-piece {
+        height: 16px;
+        width: 16px;
+    }
+
+    .computer-captured-material .material-advantage {
+        font-size: 10px;
+        min-width: 18px;
+    }
+
+    .computer-game-layout .board-wrapper {
+        gap: 3px;
+        padding: 4px;
+    }
+
+    .computer-game-layout .board {
+        border-width: 3px;
+    }
+
+    .computer-game-layout .board-toolbar {
+        gap: 3px;
+        margin-bottom: 3px;
+    }
+
+    .computer-game-layout .board-toolbar button {
+        font-size: 11px;
+        height: 23px;
+        min-height: 23px;
+        padding: 0 5px;
+    }
+
+    .computer-game-layout .icon-button {
+        width: 23px;
+    }
+
+    .computer-game-layout .analysis-mode-button {
+        font-size: 11px;
+    }
+
+    .computer-game-layout .rank-labels {
+        margin-top: 2px;
+    }
+
+    .computer-game-layout .rank-labels span,
+    .computer-game-layout .file-labels span {
+        font-size: 9px;
+    }
+
+    .computer-game-layout .file-labels {
+        margin-top: 2px;
+    }
+
+    .computer-game-layout .pgn-panel {
+        display: none;
+    }
+}
+
+@media (max-width: 380px), (max-height: 520px) {
+    .computer-game-layout {
+        --square-size: clamp(12px, min(calc((100vw - 48px) / 8), calc((100svh - 190px) / 8)), 42px);
+        --computer-stack-width: min(100%, calc((var(--square-size) * 8) + 42px));
+    }
+
+    .online-game-layout {
+        --online-stack-width: min(100%, calc((var(--square-size) * 8) + 42px));
+    }
+
+    .computer-game-layout .computer-panel {
+        max-height: 72px;
+    }
+
+    .computer-panel label,
+    .computer-panel select,
+    .computer-panel .coach-comment {
+        font-size: 9px;
+    }
+
+    .computer-panel .trainer-chat-log {
+        max-height: 22px;
+        min-height: 20px;
+    }
+
+    .computer-panel .computer-controls button {
+        font-size: 8px;
+        min-height: 22px;
+    }
+
+    .computer-captured-material .captured-row {
+        min-height: 14px;
+    }
+
+    .computer-captured-material .captured-piece {
+        height: 14px;
+        width: 14px;
     }
 }
 
@@ -1597,5 +2199,15 @@ select:focus {
 
     .board-wrapper {
         padding: 8px;
+    }
+}
+
+@media (max-width: 600px) {
+    body {
+        padding: 8px;
+    }
+
+    .computer-game-layout .board-wrapper {
+        padding: 4px;
     }
 }

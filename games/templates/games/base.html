@@ -68,6 +68,29 @@
     {% if user.is_authenticated %}
     <script>
         const notificationsUrl = "{% url 'game_notifications' %}";
+        let notificationPollingId = window.gchessNotificationPollingId || null;
+        let notificationAuthWarningShown = false;
+        let notificationNetworkWarningShown = false;
+
+        function shouldStopNotificationPolling(response) {
+            return response.redirected ||
+                response.status === 401 ||
+                response.status === 403 ||
+                response.url.includes('/accounts/login/');
+        }
+
+        function stopNotificationPolling(reason) {
+            if (notificationPollingId) {
+                clearInterval(notificationPollingId);
+                notificationPollingId = null;
+                window.gchessNotificationPollingId = null;
+            }
+
+            if (!notificationAuthWarningShown) {
+                console.warn(reason);
+                notificationAuthWarningShown = true;
+            }
+        }
 
         function getBaseCSRFToken() {
             const cookies = document.cookie.split(';');
@@ -153,16 +176,43 @@
 
         async function fetchGameNotifications() {
             try {
-                const response = await fetch(notificationsUrl);
+                const response = await fetch(notificationsUrl, {
+                    cache: 'no-store',
+                    headers: {
+                        'Accept': 'application/json',
+                    },
+                });
+
+                if (shouldStopNotificationPolling(response)) {
+                    // Stop polling after login redirects so logged-out tabs do not spam Django.
+                    stopNotificationPolling('Polling de notificaciones detenido: la sesiÃ³n parece haber expirado.');
+                    return;
+                }
+
+                if (!response.ok) {
+                    if (!notificationNetworkWarningShown) {
+                        console.warn('No se pudieron actualizar las notificaciones:', response.status, response.statusText);
+                        notificationNetworkWarningShown = true;
+                    }
+                    return;
+                }
+
+                notificationNetworkWarningShown = false;
                 const data = await response.json();
                 renderGameNotifications(data.invitations || []);
             } catch (error) {
-                console.error('Erro ao buscar convites:', error);
+                if (!notificationNetworkWarningShown) {
+                    console.warn('No se pudieron actualizar las notificaciones:', error);
+                    notificationNetworkWarningShown = true;
+                }
             }
         }
 
         fetchGameNotifications();
-        setInterval(fetchGameNotifications, 15000);
+        if (!notificationPollingId) {
+            notificationPollingId = setInterval(fetchGameNotifications, 15000);
+            window.gchessNotificationPollingId = notificationPollingId;
+        }
     </script>
     {% endif %}
 

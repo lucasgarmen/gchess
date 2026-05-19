@@ -52,6 +52,7 @@
         </div>
     </section>
 
+    <div class="online-side">
     <aside class="pgn-panel">
         <h2>PGN</h2>
         <p id="turn-indicator">{% tr "turn_white" %}</p>
@@ -96,17 +97,6 @@
 
         <ul id="move-list" style="display: none;"></ul>
         <pre id="pgn-box" class="pgn-box"></pre>
-        <div id="captured-material" class="captured-material">
-            <div class="captured-row">
-                <div id="captured-black" class="captured-pieces captured-black"></div>
-                <span id="white-material-advantage" class="material-advantage"></span>
-            </div>
-            <div class="captured-row">
-                <div id="captured-white" class="captured-pieces captured-white"></div>
-                <span id="black-material-advantage" class="material-advantage"></span>
-            </div>
-        </div>
-
         <button id="game-chat-toggle" class="game-chat-toggle" type="button">
             {% tr "chat" %} <span id="game-chat-count" hidden>0</span>
         </button>
@@ -136,6 +126,17 @@
             </form>
         </div>
     </aside>
+        <div id="captured-material" class="captured-material board-captured-material online-captured-material">
+            <div class="captured-row captured-row-black">
+                <div id="captured-black" class="captured-pieces captured-black"></div>
+                <span id="white-material-advantage" class="material-advantage"></span>
+            </div>
+            <div class="captured-row captured-row-white">
+                <div id="captured-white" class="captured-pieces captured-white"></div>
+                <span id="black-material-advantage" class="material-advantage"></span>
+            </div>
+        </div>
+    </div>
 </main>
 
 <a href="{% url 'games_list' %}">{% tr "back_to_games" %}</a>
@@ -164,6 +165,6 @@
     const UI_LANGUAGE = "{{ current_language }}";
 </script>
 
-<script src="{% static 'games/board.js' %}?v=44"></script>
+<script src="{% static 'games/board.js' %}?v=50"></script>
 
 {% endblock %}

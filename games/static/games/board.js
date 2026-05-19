@@ -21,8 +21,48 @@ let multiplayerSyncFailures = 0;
 let gameClock = typeof GAME_CLOCK !== 'undefined' ? GAME_CLOCK : null;
 let drawOffer = typeof DRAW_OFFER !== 'undefined' ? DRAW_OFFER : null;
 let timeoutSyncInProgress = false;
+let moveAudioContext = null;
+let gameStatePollingId = window.gchessGameStatePollingId || null;
+let gameChatPollingId = window.gchessGameChatPollingId || null;
+let gameStateAuthWarningShown = false;
+let gameChatAuthWarningShown = false;
+let gameStateNetworkWarningShown = false;
+let gameChatNetworkWarningShown = false;
 
 const DRAG_PIECE_SCALE = 1.7;
+
+function shouldStopPollingForAuth(response) {
+    return response.redirected ||
+        response.status === 401 ||
+        response.status === 403 ||
+        response.url.includes('/accounts/login/');
+}
+
+function stopGameStatePolling(reason) {
+    if (gameStatePollingId) {
+        clearInterval(gameStatePollingId);
+        gameStatePollingId = null;
+        window.gchessGameStatePollingId = null;
+    }
+
+    if (!gameStateAuthWarningShown) {
+        console.warn(reason);
+        gameStateAuthWarningShown = true;
+    }
+}
+
+function stopGameChatPolling(reason) {
+    if (gameChatPollingId) {
+        clearInterval(gameChatPollingId);
+        gameChatPollingId = null;
+        window.gchessGameChatPollingId = null;
+    }
+
+    if (!gameChatAuthWarningShown) {
+        console.warn(reason);
+        gameChatAuthWarningShown = true;
+    }
+}
 
 function uiText(key, fallback) {
     if (typeof UI_TEXTS !== 'undefined' && UI_TEXTS[key]) {
@@ -111,6 +151,105 @@ const initialPosition = {
     g1: { type: 'horse', color: 'white' },
     h1: { type: 'rook', color: 'white' },
 };
+
+function getMoveAudioContext() {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+    if (!AudioContextClass) {
+        return null;
+    }
+
+    if (!moveAudioContext) {
+        moveAudioContext = new AudioContextClass();
+    }
+
+    return moveAudioContext;
+}
+
+function playMoveSound() {
+    try {
+        const audioContext = getMoveAudioContext();
+
+        if (!audioContext) {
+            return;
+        }
+
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+
+        const now = audioContext.currentTime;
+        const duration = 0.16;
+        const bufferSize = Math.max(1, Math.floor(audioContext.sampleRate * duration));
+        const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+        const samples = noiseBuffer.getChannelData(0);
+
+        for (let i = 0; i < bufferSize; i += 1) {
+            const decay = 1 - (i / bufferSize);
+            samples[i] = (Math.random() * 2 - 1) * decay * decay;
+        }
+
+        const noise = audioContext.createBufferSource();
+        const lowpass = audioContext.createBiquadFilter();
+        const hollow = audioContext.createBiquadFilter();
+        const thump = audioContext.createOscillator();
+        const body = audioContext.createOscillator();
+        const noiseGain = audioContext.createGain();
+        const thumpGain = audioContext.createGain();
+        const bodyGain = audioContext.createGain();
+        const masterGain = audioContext.createGain();
+
+        noise.buffer = noiseBuffer;
+        lowpass.type = 'lowpass';
+        lowpass.frequency.setValueAtTime(620, now);
+        lowpass.Q.setValueAtTime(0.85, now);
+
+        hollow.type = 'bandpass';
+        hollow.frequency.setValueAtTime(185, now);
+        hollow.Q.setValueAtTime(7.5, now);
+
+        thump.type = 'sine';
+        thump.frequency.setValueAtTime(92, now);
+        thump.frequency.exponentialRampToValueAtTime(46, now + duration);
+
+        body.type = 'triangle';
+        body.frequency.setValueAtTime(138, now);
+        body.frequency.exponentialRampToValueAtTime(82, now + 0.12);
+
+        noiseGain.gain.setValueAtTime(0.0001, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.22, now + 0.003);
+        noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.105);
+
+        thumpGain.gain.setValueAtTime(0.0001, now);
+        thumpGain.gain.exponentialRampToValueAtTime(0.28, now + 0.004);
+        thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.145);
+
+        bodyGain.gain.setValueAtTime(0.0001, now);
+        bodyGain.gain.exponentialRampToValueAtTime(0.16, now + 0.008);
+        bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+
+        masterGain.gain.setValueAtTime(1.25, now);
+
+        noise.connect(lowpass);
+        lowpass.connect(hollow);
+        hollow.connect(noiseGain);
+        noiseGain.connect(masterGain);
+        thump.connect(thumpGain);
+        thumpGain.connect(masterGain);
+        body.connect(bodyGain);
+        bodyGain.connect(masterGain);
+        masterGain.connect(audioContext.destination);
+
+        noise.start(now);
+        noise.stop(now + duration);
+        thump.start(now);
+        thump.stop(now + duration);
+        body.start(now);
+        body.stop(now + duration);
+    } catch (error) {
+        console.error('Erro ao reproduzir som da jogada:', error);
+    }
+}
 
 const letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
@@ -830,6 +969,7 @@ async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromot
     updateTurnIndicator();
     updateHistoryControls();
     updateCapturedMaterial();
+    playMoveSound();
 
     saveMoveToDatabase(playedMove, {
         finished: gameEnded,
@@ -1078,13 +1218,15 @@ if (clockIsEnabled()) {
     setInterval(renderClock, 1000);
 }
 
-if (isMultiplayerMode()) {
-    setInterval(syncMovesFromServer, 1500);
+if (isMultiplayerMode() && !gameStatePollingId) {
+    gameStatePollingId = setInterval(syncMovesFromServer, 2500);
+    window.gchessGameStatePollingId = gameStatePollingId;
 }
 
-if (gameChatToggle && GAME_ID) {
+if (gameChatToggle && GAME_ID && !gameChatPollingId) {
     fetchGameChat();
-    setInterval(fetchGameChat, 3000);
+    gameChatPollingId = setInterval(fetchGameChat, 4000);
+    window.gchessGameChatPollingId = gameChatPollingId;
 }
 
 function clockIsEnabled() {
@@ -1312,14 +1454,28 @@ async function fetchGameChat() {
             },
         });
 
-        if (!response.ok) {
+        if (shouldStopPollingForAuth(response)) {
+            // Stop polling after login redirects so logged-out tabs do not spam Django.
+            stopGameChatPolling('Chat polling detenido: la sesiÃ³n parece haber expirado.');
             return;
         }
 
+        if (!response.ok) {
+            if (!gameChatNetworkWarningShown) {
+                console.warn('No se pudo actualizar el chat:', response.status, response.statusText);
+                gameChatNetworkWarningShown = true;
+            }
+            return;
+        }
+
+        gameChatNetworkWarningShown = false;
         const data = await response.json();
         renderGameChat(data);
     } catch (error) {
-        console.error('Erro ao buscar chat:', error);
+        if (!gameChatNetworkWarningShown) {
+            console.warn('No se pudo actualizar el chat:', error);
+            gameChatNetworkWarningShown = true;
+        }
     } finally {
         gameChatLoading = false;
     }
@@ -2254,13 +2410,23 @@ async function syncMovesFromServer() {
             },
         });
 
+        if (shouldStopPollingForAuth(response)) {
+            // Stop polling after login redirects so logged-out tabs do not spam Django.
+            stopGameStatePolling('Polling de partida detenido: la sesiÃ³n parece haber expirado.');
+            return;
+        }
+
         if (!response.ok) {
             multiplayerSyncFailures += 1;
-            console.error('Erro ao atualizar estado da partida:', response.status, response.statusText);
+            if (!gameStateNetworkWarningShown) {
+                console.warn('No se pudo actualizar el estado de la partida:', response.status, response.statusText);
+                gameStateNetworkWarningShown = true;
+            }
             return;
         }
 
         multiplayerSyncFailures = 0;
+        gameStateNetworkWarningShown = false;
         const data = await response.json();
         applyClockState(data.clock);
         applyDrawOfferState(data.draw_offer);
@@ -2285,9 +2451,16 @@ async function syncMovesFromServer() {
         SAVED_MOVES.splice(0, SAVED_MOVES.length, ...serverMoves);
         renderSavedMoveList();
         loadPositionUntil(SAVED_MOVES.length);
+
+        if (serverMoves.length > 0) {
+            playMoveSound();
+        }
     } catch (error) {
         multiplayerSyncFailures += 1;
-        console.error('Erro ao sincronizar movimentos:', error);
+        if (!gameStateNetworkWarningShown) {
+            console.warn('No se pudo sincronizar la partida:', error);
+            gameStateNetworkWarningShown = true;
+        }
     }
 }
 
