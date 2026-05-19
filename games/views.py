@@ -482,6 +482,46 @@ def board_from_game_moves(game):
     return board, None
 
 
+def serialize_moves(game):
+    return [
+        {
+            'move_number': move.move_number,
+            'from': move.from_square,
+            'to': move.to_square,
+            'piece_type': move.piece_type,
+            'piece_color': move.piece_color,
+            'promotion': move.promotion,
+        }
+        for move in game.moves.all().order_by('move_number', 'id')
+    ]
+
+
+def serialize_game_state(game, user):
+    board, board_error = board_from_game_moves(game)
+    moves = serialize_moves(game)
+    last_move = moves[-1] if moves else None
+    last_saved_move = game.moves.order_by('-move_number', '-id').first()
+    state_changed_at = last_saved_move.created_at if last_saved_move else game.created_at
+
+    return {
+        'game_id': game.id,
+        'fen': board.fen(),
+        'turn': 'white' if board.turn == chess.WHITE else 'black',
+        'moves': moves,
+        'move_count': len(moves),
+        'last_move': last_move,
+        'status': game.status,
+        'result': game.result if game.result in ('white', 'black', 'draw') else None,
+        'game_finished': game.status == 'finished',
+        'winner': game.result if game.result in ('white', 'black') else None,
+        'version': f'{game.status}:{game.result}:{len(moves)}:{last_saved_move.id if last_saved_move else 0}',
+        'changed_at': state_changed_at.isoformat() if state_changed_at else None,
+        'board_error': board_error,
+        'clock': serialize_clock(game),
+        'draw_offer': serialize_draw_offer(game, user),
+    }
+
+
 def evaluate_board_outcome(board):
     if board.is_checkmate():
         winner = 'black' if board.turn == chess.WHITE else 'white'
@@ -549,17 +589,7 @@ def game_detail(request, game_id):
     game = get_game_for_user(game_id, request.user)
     apply_clock_elapsed(game)
     player_color = player_color_for_game(game, request.user)
-    moves = [
-        {
-            'move_number': move.move_number,
-            'from': move.from_square,
-            'to': move.to_square,
-            'piece_type': move.piece_type,
-            'piece_color': move.piece_color,
-            'promotion': move.promotion,
-        }
-        for move in game.moves.all().order_by('move_number')
-    ]
+    moves = serialize_moves(game)
 
     return render(request, 'games/game_detail.html', {
         'game': game,
@@ -635,6 +665,7 @@ def save_move(request, game_id):
     timeout_winner = apply_clock_elapsed(game)
 
     if timeout_winner:
+        logger.info("Move rejected for game %s by user %s: clock expired.", game.id, request.user.id)
         return JsonResponse({
             'error': 'Tempo esgotado.',
             'clock': serialize_clock(game),
@@ -646,38 +677,47 @@ def save_move(request, game_id):
     expected_color = 'white' if game.moves.count() % 2 == 0 else 'black'
 
     if game.status == 'finished':
+        logger.info("Move rejected for game %s by user %s: game is finished.", game.id, request.user.id)
         return JsonResponse({'error': 'A partida ja terminou.'}, status=409)
 
     if not player_color:
+        logger.warning("Move rejected for game %s by user %s: user is not a player.", game.id, request.user.id)
         return JsonResponse({'error': 'Apenas jogadores da partida podem mover.'}, status=403)
 
     if player_color != expected_color:
+        logger.info("Move rejected for game %s by user %s: expected %s, got %s.", game.id, request.user.id, expected_color, player_color)
         return JsonResponse({'error': 'Nao e sua vez.'}, status=403)
 
     board, board_error = board_from_game_moves(game)
 
     if board_error:
+        logger.warning("Move rejected for game %s by user %s: saved board is invalid (%s).", game.id, request.user.id, board_error)
         return JsonResponse({'error': 'A posicao salva da partida esta invalida.'}, status=409)
 
     try:
         chess_move = build_chess_move_from_data(data)
     except (KeyError, ValueError):
+        logger.info("Move rejected for game %s by user %s: invalid payload.", game.id, request.user.id)
         return JsonResponse({'error': 'Jogada invalida.'}, status=400)
 
     if chess_move not in board.legal_moves:
+        logger.info("Move rejected for game %s by user %s: illegal move %s.", game.id, request.user.id, chess_move)
         return JsonResponse({'error': 'Jogada ilegal nessa posicao.'}, status=400)
 
     moving_piece = board.piece_at(chess_move.from_square)
 
     if not moving_piece:
+        logger.info("Move rejected for game %s by user %s: no piece at origin.", game.id, request.user.id)
         return JsonResponse({'error': 'Jogada invalida.'}, status=400)
 
     server_piece_color = 'white' if moving_piece.color == chess.WHITE else 'black'
 
     if server_piece_color != expected_color:
+        logger.info("Move rejected for game %s by user %s: attempted color %s on %s turn.", game.id, request.user.id, server_piece_color, expected_color)
         return JsonResponse({'error': 'Nao e a vez dessa cor.'}, status=400)
 
     if server_piece_color != player_color:
+        logger.warning("Move rejected for game %s by user %s: attempted opponent color %s.", game.id, request.user.id, server_piece_color)
         return JsonResponse({'error': 'Voce so pode mover suas proprias pecas.'}, status=403)
 
     draw_offer_declined_by_move = bool(
@@ -721,6 +761,14 @@ def save_move(request, game_id):
     elif draw_offer_declined_by_move:
         game.draw_offer_by_color = ''
         game.save(update_fields=['draw_offer_by_color'])
+
+    logger.info(
+        "Move saved for game %s by user %s: %s%s.",
+        game.id,
+        request.user.id,
+        move.from_square,
+        move.to_square,
+    )
 
     return JsonResponse({
         'status': 'ok',
@@ -1114,26 +1162,27 @@ def game_moves(request, game_id):
     game = get_game_for_user(game_id, request.user)
     finish_clock_if_expired(game)
 
-    moves = [
-        {
-            'move_number': move.move_number,
-            'from': move.from_square,
-            'to': move.to_square,
-            'piece_type': move.piece_type,
-            'piece_color': move.piece_color,
-            'promotion': move.promotion,
-        }
-        for move in game.moves.all().order_by('move_number')
-    ]
-
     return JsonResponse({
-        'moves': moves,
+        'moves': serialize_moves(game),
         'clock': serialize_clock(game),
         'game_finished': game.status == 'finished',
         'winner': game.result if game.result in ('white', 'black') else None,
         'result': game.result if game.result in ('white', 'black', 'draw') else None,
         'draw_offer': serialize_draw_offer(game, request.user),
     })
+
+
+@login_required
+@rate_limit(120, 60, 'game-state')
+def game_state(request, game_id):
+    touch_presence(request.user)
+    game = get_game_for_user(game_id, request.user)
+    finish_clock_if_expired(game)
+
+    response = JsonResponse(serialize_game_state(game, request.user))
+    response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response['Pragma'] = 'no-cache'
+    return response
 
 
 @login_required

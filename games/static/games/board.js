@@ -17,6 +17,7 @@ let analysisBoardState = null;
 let analysisGameState = null;
 let analysisPositions = [];
 let analysisPositionIndex = 0;
+let multiplayerSyncFailures = 0;
 let gameClock = typeof GAME_CLOCK !== 'undefined' ? GAME_CLOCK : null;
 let drawOffer = typeof DRAW_OFFER !== 'undefined' ? DRAW_OFFER : null;
 let timeoutSyncInProgress = false;
@@ -2246,12 +2247,20 @@ async function syncMovesFromServer() {
     }
 
     try {
-        const response = await fetch(`/games/${GAME_ID}/moves/`);
+        const response = await fetch(`/games/${GAME_ID}/state/?_=${Date.now()}`, {
+            cache: 'no-store',
+            headers: {
+                'Accept': 'application/json',
+            },
+        });
 
         if (!response.ok) {
+            multiplayerSyncFailures += 1;
+            console.error('Erro ao atualizar estado da partida:', response.status, response.statusText);
             return;
         }
 
+        multiplayerSyncFailures = 0;
         const data = await response.json();
         applyClockState(data.clock);
         applyDrawOfferState(data.draw_offer);
@@ -2277,6 +2286,7 @@ async function syncMovesFromServer() {
         renderSavedMoveList();
         loadPositionUntil(SAVED_MOVES.length);
     } catch (error) {
+        multiplayerSyncFailures += 1;
         console.error('Erro ao sincronizar movimentos:', error);
     }
 }

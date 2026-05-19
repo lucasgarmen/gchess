@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import chess
 from django.contrib.auth.models import User
-from django.test import SimpleTestCase, TestCase
+from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 
 from .models import ChessGame, GameInvitation, Move
@@ -114,6 +114,67 @@ class InvitationLinkTests(TestCase):
 
 
 class GameAccessTests(TestCase):
+    def create_multiplayer_game(self):
+        white = User.objects.create_user(username="white", password="pass")
+        black = User.objects.create_user(username="black", password="pass")
+        game = ChessGame.objects.create(
+            owner=white,
+            white_user=white,
+            black_user=black,
+            white_player=white.username,
+            black_player=black.username,
+        )
+        return white, black, game
+
+    def post_move(self, user, game, from_square, to_square, piece_color="white", piece_type="pawn"):
+        self.client.force_login(user)
+        return self.client.post(
+            reverse("save_move", args=[game.id]),
+            data=json.dumps({
+                "from": from_square,
+                "to": to_square,
+                "piece_color": piece_color,
+                "piece_type": piece_type,
+            }),
+            content_type="application/json",
+        )
+
+    def test_anonymous_user_cannot_view_private_game(self):
+        owner = User.objects.create_user(username="owner", password="pass")
+        game = ChessGame.objects.create(
+            owner=owner,
+            white_user=owner,
+            white_player=owner.username,
+            black_player="Guest",
+        )
+
+        response = self.client.get(reverse("game_detail", args=[game.id]))
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_games_list_only_shows_current_users_games(self):
+        user = User.objects.create_user(username="list-user", password="pass")
+        other = User.objects.create_user(username="other-list-user", password="pass")
+        own_game = ChessGame.objects.create(
+            owner=user,
+            white_user=user,
+            white_player=user.username,
+            black_player="Guest",
+        )
+        other_game = ChessGame.objects.create(
+            owner=other,
+            white_user=other,
+            white_player=other.username,
+            black_player="Guest",
+        )
+
+        self.client.force_login(user)
+        response = self.client.get(reverse("games_list"))
+
+        games = [card["game"] for card in response.context["game_cards"]]
+        self.assertIn(own_game, games)
+        self.assertNotIn(other_game, games)
+
     def test_user_cannot_access_other_users_game(self):
         owner = User.objects.create_user(username="owner", password="pass")
         intruder = User.objects.create_user(username="intruder", password="pass")
@@ -128,6 +189,25 @@ class GameAccessTests(TestCase):
         response = self.client.get(reverse("game_detail", args=[game.id]))
 
         self.assertEqual(response.status_code, 404)
+
+    def test_non_participant_cannot_save_move_by_changing_id(self):
+        white, _black, game = self.create_multiplayer_game()
+        intruder = User.objects.create_user(username="move-intruder", password="pass")
+
+        response = self.post_move(intruder, game, "e2", "e4")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(game.moves.count(), 0)
+
+    def test_only_player_on_turn_can_move(self):
+        white, black, game = self.create_multiplayer_game()
+
+        black_response = self.post_move(black, game, "e7", "e5", piece_color="black")
+        white_response = self.post_move(white, game, "e2", "e4")
+
+        self.assertEqual(black_response.status_code, 403)
+        self.assertEqual(white_response.status_code, 200)
+        self.assertEqual(game.moves.count(), 1)
 
     def test_user_cannot_move_opponents_piece(self):
         white = User.objects.create_user(username="white", password="pass")
@@ -190,6 +270,68 @@ class GameAccessTests(TestCase):
         move = game.moves.get()
         self.assertEqual(move.piece_color, "white")
 
+    def test_user_cannot_modify_finished_game(self):
+        white, _black, game = self.create_multiplayer_game()
+        game.status = "finished"
+        game.result = "draw"
+        game.save(update_fields=["status", "result"])
+
+        response = self.post_move(white, game, "e2", "e4")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(game.moves.count(), 0)
+
+    def test_state_endpoint_returns_latest_multiplayer_state(self):
+        white, black, game = self.create_multiplayer_game()
+        self.assertEqual(self.post_move(white, game, "e2", "e4").status_code, 200)
+
+        self.client.force_login(black)
+        response = self.client.get(reverse("game_state", args=[game.id]))
+        data = response.json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["fen"], chess.Board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1").fen())
+        self.assertEqual(data["turn"], "black")
+        self.assertEqual(data["move_count"], 1)
+        self.assertEqual(data["last_move"]["from"], "e2")
+        self.assertIn("version", data)
+        self.assertEqual(response.headers["Cache-Control"], "no-store, no-cache, must-revalidate, max-age=0")
+
+    def test_legacy_moves_endpoint_still_returns_latest_moves(self):
+        white, black, game = self.create_multiplayer_game()
+        self.assertEqual(self.post_move(white, game, "e2", "e4").status_code, 200)
+
+        self.client.force_login(black)
+        response = self.client.get(reverse("game_moves", args=[game.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["moves"][0]["to"], "e4")
+
+    def test_save_move_requires_csrf_when_checks_are_enforced(self):
+        white, _black, game = self.create_multiplayer_game()
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(white)
+
+        response = client.post(
+            reverse("save_move", args=[game.id]),
+            data=json.dumps({"from": "e2", "to": "e4"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_too_many_engine_moves_is_rejected_before_stockfish(self):
+        user = User.objects.create_user(username="engine-abuse", password="pass")
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("engine_move"),
+            data=json.dumps({"moves": [{}] * 301, "elo": 1320}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
     def test_invalid_pgn_does_not_break_analyzer(self):
         user = User.objects.create_user(username="player", password="pass")
 
@@ -212,3 +354,145 @@ class GameAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertIn("Stockfish is not available", response.json()["error"])
+
+
+class GameCreationTests(TestCase):
+    def test_logged_in_user_can_create_link_invitation(self):
+        user = User.objects.create_user(username="creator", password="pass")
+        self.client.force_login(user)
+
+        response = self.client.post(reverse("game_create"), data={
+            "opponent_mode": "link",
+            "color_choice": "white",
+            "time_control_minutes": "",
+        })
+
+        invitation = GameInvitation.objects.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(invitation.creator, user)
+        self.assertEqual(invitation.opponent_mode, "link")
+        self.assertEqual(invitation.status, "pending")
+
+    def test_link_invitation_assigns_white_and_black_players(self):
+        creator = User.objects.create_user(username="creator", password="pass")
+        opponent = User.objects.create_user(username="opponent", password="pass")
+        invitation = GameInvitation.objects.create(
+            creator=creator,
+            opponent_mode="link",
+            creator_color="black",
+        )
+
+        self.client.force_login(opponent)
+        self.client.get(reverse("accept_invitation_link", args=[invitation.token]))
+
+        game = ChessGame.objects.get()
+        self.assertEqual(game.white_user, opponent)
+        self.assertEqual(game.black_user, creator)
+        self.assertEqual(game.owner, creator)
+
+    def test_invalid_invitation_link_returns_not_found(self):
+        user = User.objects.create_user(username="link-user", password="pass")
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("accept_invitation_link", args=["00000000-0000-0000-0000-000000000000"]))
+
+        self.assertEqual(response.status_code, 404)
+
+
+class StockfishEndpointTests(TestCase):
+    class FakeEngine:
+        options = {}
+
+        def play(self, board, limit):
+            return type("PlayResult", (), {"move": chess.Move.from_uci("e2e4")})()
+
+        def quit(self):
+            pass
+
+    def test_engine_move_works_when_stockfish_path_exists(self):
+        user = User.objects.create_user(username="engine-ok", password="pass")
+        self.client.force_login(user)
+
+        with patch.dict(os.environ, {"STOCKFISH_PATH": "/usr/games/stockfish"}), \
+                patch("games.views.Path.exists", return_value=True), \
+                patch("games.views.chess.engine.SimpleEngine.popen_uci", return_value=self.FakeEngine()):
+            response = self.client.post(
+                reverse("engine_move"),
+                data=json.dumps({"moves": [], "elo": 1320}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["from"], "e2")
+        self.assertEqual(response.json()["to"], "e4")
+
+    def test_engine_move_accepts_different_supported_elos(self):
+        user = User.objects.create_user(username="engine-elotest", password="pass")
+        self.client.force_login(user)
+
+        with patch.dict(os.environ, {"STOCKFISH_PATH": "/usr/games/stockfish"}), \
+                patch("games.views.Path.exists", return_value=True), \
+                patch("games.views.chess.engine.SimpleEngine.popen_uci", return_value=self.FakeEngine()):
+            response = self.client.post(
+                reverse("engine_move"),
+                data=json.dumps({"moves": [], "elo": 2000}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_trainer_chat_handles_languages_without_breaking(self):
+        user = User.objects.create_user(username="trainer-user", password="pass")
+        self.client.force_login(user)
+
+        with patch("games.views.configured_stockfish_path", return_value=("stockfish", "")), \
+                patch("games.views.chess.engine.SimpleEngine.popen_uci", return_value=self.FakeEngine()), \
+                patch("games.views.build_trainer_chat_answer", return_value="ok"):
+            for language in ("pt", "es", "en"):
+                response = self.client.post(
+                    reverse("trainer_chat"),
+                    data=json.dumps({
+                        "moves": [],
+                        "question": "best move?",
+                        "player_color": "white",
+                        "language": language,
+                    }),
+                    content_type="application/json",
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["answer"], "ok")
+
+
+class DeployReadinessTests(SimpleTestCase):
+    def test_sensitive_local_files_are_ignored(self):
+        gitignore = open(".gitignore", encoding="utf-8").read()
+
+        self.assertIn(".env", gitignore)
+        self.assertIn("db.sqlite3", gitignore)
+        self.assertIn("staticfiles/", gitignore)
+
+    def test_production_settings_are_environment_driven(self):
+        settings_source = open("config/settings.py", encoding="utf-8").read()
+
+        self.assertIn("os.environ.get('DJANGO_SECRET_KEY')", settings_source)
+        self.assertIn("env_bool('DJANGO_DEBUG'", settings_source)
+        self.assertIn("env_list('DJANGO_ALLOWED_HOSTS'", settings_source)
+        self.assertIn("env_list('DJANGO_CSRF_TRUSTED_ORIGINS'", settings_source)
+
+    def test_render_files_are_configured(self):
+        build = open("build.sh", encoding="utf-8").read()
+        procfile = open("Procfile", encoding="utf-8").read()
+        requirements = open("requirements.txt", encoding="utf-8").read()
+
+        self.assertIn("apt-get install -y stockfish", build)
+        self.assertIn("collectstatic --no-input", build)
+        self.assertIn("python manage.py migrate", build)
+        self.assertIn("gunicorn config.wsgi:application", procfile)
+        self.assertIn("gunicorn", requirements)
+        self.assertIn("whitenoise", requirements)
+
+    def test_no_windows_stockfish_path_is_hardcoded_in_runtime_code(self):
+        for path in ("games/views.py", "config/settings.py", "build.sh", "Procfile"):
+            source = open(path, encoding="utf-8").read()
+            self.assertNotIn(r"C:\Users\lucas", source)
