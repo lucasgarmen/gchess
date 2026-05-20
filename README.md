@@ -130,13 +130,13 @@ bash build.sh
 Start command:
 
 ```bash
-gunicorn config.wsgi:application
+gunicorn config.wsgi:application --workers 2 --threads 8 --timeout 60
 ```
 
 The included `Procfile` also defines:
 
 ```bash
-web: gunicorn config.wsgi:application
+web: gunicorn config.wsgi:application --workers 2 --threads 8 --timeout 60
 ```
 
 Recommended Render environment variables:

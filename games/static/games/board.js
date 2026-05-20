@@ -19,6 +19,7 @@ let analysisPositions = [];
 let analysisPositionIndex = 0;
 let queuedMove = null;
 let multiplayerSyncFailures = 0;
+let lastGameStateVersion = null;
 let gameClock = typeof GAME_CLOCK !== 'undefined' ? GAME_CLOCK : null;
 let drawOffer = typeof DRAW_OFFER !== 'undefined' ? DRAW_OFFER : null;
 let timeoutSyncInProgress = false;
@@ -32,12 +33,27 @@ let pendingStartSound = false;
 let audioUnlockBound = false;
 let gameStatePollingId = window.gchessGameStatePollingId || null;
 let gameChatPollingId = window.gchessGameChatPollingId || null;
+let gameStateLoading = false;
 let gameStateAuthWarningShown = false;
 let gameChatAuthWarningShown = false;
 let gameStateNetworkWarningShown = false;
 let gameChatNetworkWarningShown = false;
 
 const DRAG_PIECE_SCALE = 1.7;
+const GAME_STATE_RETRY_INTERVAL_MS = 1000;
+
+function scheduleGameStateSync(delay = 0) {
+    if (!isMultiplayerMode() || gameStatePollingId) {
+        return;
+    }
+
+    gameStatePollingId = setTimeout(() => {
+        gameStatePollingId = null;
+        window.gchessGameStatePollingId = null;
+        syncMovesFromServer(true);
+    }, delay);
+    window.gchessGameStatePollingId = gameStatePollingId;
+}
 
 //Funcçao para redireccionar usuario que nao está logueado
 function shouldStopPollingForAuth(response) {
@@ -1403,8 +1419,7 @@ if (clockIsEnabled()) {
 }
 
 if (isMultiplayerMode() && !gameStatePollingId) {
-    gameStatePollingId = setInterval(syncMovesFromServer, 2500);
-    window.gchessGameStatePollingId = gameStatePollingId;
+    scheduleGameStateSync();
 }
 
 if (gameChatToggle && GAME_ID && !gameChatPollingId) {
@@ -2499,12 +2514,16 @@ function setupInitialPosition() {
     });
 }
 
-function applyMoveWithoutSaving(move) {
+async function applyMoveWithoutSaving(move, shouldAnimate = false) {
     const promotionType = move.promotion || 'queen';
     const fromSquare = getSquare(move.from);
     const toSquare = getSquare(move.to);
     const movingType = move.piece_type;
     const movingColor = move.piece_color;
+
+    if (shouldAnimate) {
+        await animateMove(fromSquare, toSquare);
+    }
 
     if (
         movingType === 'pawn' &&
@@ -2543,6 +2562,23 @@ function applyMoveWithoutSaving(move) {
     updateCastlingRightsAfterMove(move);
 }
 
+async function applyAppendedServerMoves(newMoves, oldMoveCount) {
+    for (let index = oldMoveCount; index < newMoves.length; index++) {
+        const move = newMoves[index];
+
+        await applyMoveWithoutSaving(move, true);
+        lastMove = move;
+        historyIndex = index + 1;
+        moveNumber = historyIndex + 1;
+        currentTurn = historyIndex % 2 === 0 ? 'white' : 'black';
+    }
+
+    refreshGameStatus();
+    updateTurnIndicator();
+    updateHistoryControls();
+    updateCapturedMaterial();
+}
+
 function loadPositionUntil(index) {
     index = Math.max(0, Math.min(index, SAVED_MOVES.length));
 
@@ -2576,18 +2612,30 @@ function movesAreEqual(firstMove, secondMove) {
         (firstMove.promotion || null) === (secondMove.promotion || null);
 }
 
-async function syncMovesFromServer() {
+async function syncMovesFromServer(keepWatching = false) {
+    let continueWatching = keepWatching;
+    let nextSyncDelay = 0;
+
     if (
         typeof GAME_ID === 'undefined' ||
         typeof ANALYZER_MODE !== 'undefined' && ANALYZER_MODE ||
         isComputerMode() ||
-        promotionPending
+        promotionPending ||
+        gameStateLoading
     ) {
+        if (keepWatching && !gameStateLoading) {
+            scheduleGameStateSync(GAME_STATE_RETRY_INTERVAL_MS);
+        }
         return;
     }
 
+    gameStateLoading = true;
+
     try {
-        const response = await fetch(`/games/${GAME_ID}/state/?_=${Date.now()}`, {
+        const stateUrl = keepWatching
+            ? `/games/${GAME_ID}/state/wait/?version=${encodeURIComponent(lastGameStateVersion || '')}&_=${Date.now()}`
+            : `/games/${GAME_ID}/state/?_=${Date.now()}`;
+        const response = await fetch(stateUrl, {
             cache: 'no-store',
             headers: {
                 'Accept': 'application/json',
@@ -2596,11 +2644,13 @@ async function syncMovesFromServer() {
 
         if (shouldStopPollingForAuth(response)) {
             // Stop polling after login redirects so logged-out tabs do not spam Django.
+            continueWatching = false;
             stopGameStatePolling('Polling de partida detenido: la sesiÃ³n parece haber expirado.');
             return;
         }
 
         if (!response.ok) {
+            nextSyncDelay = GAME_STATE_RETRY_INTERVAL_MS;
             multiplayerSyncFailures += 1;
             if (!gameStateNetworkWarningShown) {
                 console.warn('No se pudo actualizar el estado de la partida:', response.status, response.statusText);
@@ -2612,6 +2662,7 @@ async function syncMovesFromServer() {
         multiplayerSyncFailures = 0;
         gameStateNetworkWarningShown = false;
         const data = await response.json();
+        lastGameStateVersion = data.version || lastGameStateVersion;
         applyClockState(data.clock);
         applyDrawOfferState(data.draw_offer);
         showServerGameResult(data);
@@ -2625,6 +2676,8 @@ async function syncMovesFromServer() {
         }
 
         const serverMoves = data.moves || [];
+        const oldMoveCount = SAVED_MOVES.length;
+        const wasViewingLatestPosition = isViewingLatestPosition();
         const hasDifferentMoves = serverMoves.length !== SAVED_MOVES.length ||
             serverMoves.some((move, index) => !movesAreEqual(move, SAVED_MOVES[index]));
 
@@ -2632,20 +2685,34 @@ async function syncMovesFromServer() {
             return;
         }
 
+        const hasOnlyAppendedMoves = serverMoves.length > oldMoveCount &&
+            SAVED_MOVES.every((move, index) => movesAreEqual(move, serverMoves[index]));
+
         SAVED_MOVES.splice(0, SAVED_MOVES.length, ...serverMoves);
         renderSavedMoveList();
-        loadPositionUntil(SAVED_MOVES.length);
 
-        if (serverMoves.length > 0) {
+        if (hasOnlyAppendedMoves && wasViewingLatestPosition) {
+            await applyAppendedServerMoves(serverMoves, oldMoveCount);
+        } else {
+            loadPositionUntil(SAVED_MOVES.length);
+        }
+
+        if (serverMoves.length > oldMoveCount) {
             playMoveSound();
         }
 
         await playQueuedMoveIfReady();
     } catch (error) {
+        nextSyncDelay = GAME_STATE_RETRY_INTERVAL_MS;
         multiplayerSyncFailures += 1;
         if (!gameStateNetworkWarningShown) {
             console.warn('No se pudo sincronizar la partida:', error);
             gameStateNetworkWarningShown = true;
+        }
+    } finally {
+        gameStateLoading = false;
+        if (continueWatching) {
+            scheduleGameStateSync(nextSyncDelay);
         }
     }
 }
