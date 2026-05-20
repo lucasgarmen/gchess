@@ -2103,6 +2103,16 @@ select:focus {
     box-shadow: inset 0 0 0 5px rgba(255, 230, 109, 0.52);
 }
 
+.queued-move-target {
+    background-image: linear-gradient(rgba(255, 230, 109, 0.3), rgba(255, 230, 109, 0.3));
+    box-shadow: inset 0 0 0 5px rgba(255, 230, 109, 0.62);
+}
+
+.queued-move-origin {
+    outline: 3px solid rgba(255, 230, 109, 0.62);
+    outline-offset: -3px;
+}
+
 .piece {
     filter: drop-shadow(0 6px 5px rgba(0, 0, 0, 0.24));
 }

@@ -17,6 +17,7 @@ let analysisBoardState = null;
 let analysisGameState = null;
 let analysisPositions = [];
 let analysisPositionIndex = 0;
+let queuedMove = null;
 let multiplayerSyncFailures = 0;
 let gameClock = typeof GAME_CLOCK !== 'undefined' ? GAME_CLOCK : null;
 let drawOffer = typeof DRAW_OFFER !== 'undefined' ? DRAW_OFFER : null;
@@ -349,6 +350,16 @@ function canPlayerMoveFrom(square) {
     return !isComputerMode() || currentTurn === playerColor();
 }
 
+function canQueueMoveFrom(square) {
+    return isMultiplayerMode() &&
+        !analysisMode &&
+        isViewingLatestPosition() &&
+        !gameOver &&
+        !promotionPending &&
+        currentTurn !== playerColor() &&
+        squareColor(square) === playerColor();
+}
+
 function updateTurnIndicator() {
     if (analysisMode) {
         turnIndicator.innerText = uiText('analysis_mode_testing', 'Modo análisis: pruebas temporarias');
@@ -478,6 +489,7 @@ function enterAnalysisMode() {
         return;
     }
 
+    clearQueuedMove();
     clearSelection();
     analysisBoardState = snapshotBoard();
     analysisGameState = {
@@ -719,6 +731,26 @@ function selectSquare(square) {
     highlightMoves(moves);
 }
 
+function clearQueuedMove() {
+    if (queuedMove) {
+        getSquare(queuedMove.from)?.classList.remove('queued-move-origin');
+        getSquare(queuedMove.to)?.classList.remove('queued-move-target');
+    }
+
+    queuedMove = null;
+}
+
+function queueMove(fromSquare, toSquare) {
+    clearQueuedMove();
+    queuedMove = {
+        from: fromSquare.dataset.coord,
+        to: toSquare.dataset.coord,
+    };
+    fromSquare.classList.add('queued-move-origin');
+    toSquare.classList.add('queued-move-target');
+    clearSelection();
+}
+
 function clearSelection() {
     if (selectedSquare !== null) {
         selectedSquare.classList.remove('selected');
@@ -909,6 +941,8 @@ function animateMove(fromSquare, toSquare) {
 }
 
 async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromotion = null) {
+    clearQueuedMove();
+
     const movingType = fromSquare.dataset.type;
     const movingColor = fromSquare.dataset.color;
 
@@ -1012,6 +1046,36 @@ async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromot
     }
 }
 
+async function playQueuedMoveIfReady() {
+    if (
+        !queuedMove ||
+        !isMultiplayerMode() ||
+        analysisMode ||
+        gameOver ||
+        promotionPending ||
+        currentTurn !== playerColor() ||
+        !isViewingLatestPosition()
+    ) {
+        return;
+    }
+
+    const fromSquare = getSquare(queuedMove.from);
+    const toSquare = getSquare(queuedMove.to);
+
+    if (
+        !fromSquare ||
+        !toSquare ||
+        squareColor(fromSquare) !== playerColor() ||
+        !getLegalMoves(fromSquare).includes(queuedMove.to)
+    ) {
+        clearQueuedMove();
+        clearSelection();
+        return;
+    }
+
+    await playMove(fromSquare, toSquare);
+}
+
 function startPieceDrag(square, event) {
     if (promotionPending) {
         return;
@@ -1040,8 +1104,9 @@ function startPieceDrag(square, event) {
     suppressNextClick = true;
 
     const canPlayFromSquare = canPlayerMoveFrom(square);
+    const canQueueFromSquare = canQueueMoveFrom(square);
 
-    if (canPlayFromSquare) {
+    if (canPlayFromSquare || canQueueFromSquare) {
         selectSquare(square);
     }
 
@@ -1049,7 +1114,10 @@ function startPieceDrag(square, event) {
         originSquare: square,
         dragPiece: dragPiece,
         pointerId: event.pointerId ?? null,
-        canPlayFromSquare: canPlayFromSquare
+        canPlayFromSquare: canPlayFromSquare,
+        canQueueFromSquare: canQueueFromSquare,
+        startX: event.clientX,
+        startY: event.clientY
     };
 
     if (event.pointerId !== undefined && square.setPointerCapture) {
@@ -1089,15 +1157,35 @@ async function finishPieceDrag(event) {
     const originSquare = dragState.originSquare;
     const targetSquare = getSquareFromPoint(event.clientX, event.clientY);
     const canPlayFromSquare = dragState.canPlayFromSquare;
+    const canQueueFromSquare = dragState.canQueueFromSquare;
+    const dragDistance = Math.hypot(event.clientX - dragState.startX, event.clientY - dragState.startY);
+    const isTap = dragDistance < 8;
 
     cleanupDragState();
 
+    if (isTap) {
+        clearSelection();
+        if (canPlayFromSquare || canQueueFromSquare) {
+            selectSquare(originSquare);
+        }
+        return;
+    }
+
     if (!canPlayFromSquare) {
+        if (canQueueFromSquare && targetSquare && targetSquare !== originSquare && isPossibleMove(targetSquare)) {
+            queueMove(originSquare, targetSquare);
+            return;
+        }
+
         clearSelection();
         return;
     }
 
     if (targetSquare === originSquare) {
+        clearSelection();
+        if (canPlayFromSquare || canQueueFromSquare) {
+            selectSquare(originSquare);
+        }
         return;
     }
 
@@ -1176,11 +1264,50 @@ for (let row = 8; row >= 1; row--) {
         square.addEventListener('click', async function () {
             if (suppressNextClick) {
                 suppressNextClick = false;
+                if (!promotionPending && isViewingLatestPosition() && !gameOver && canPlayerMoveFrom(square)) {
+                    clearSelection();
+                    selectSquare(square);
+                }
                 return;
             }
 
             if (promotionPending) {
                 return;
+            }
+
+            if (canQueueMoveFrom(square) || (selectedSquare && canQueueMoveFrom(selectedSquare))) {
+                if (queuedMove) {
+                    clearQueuedMove();
+                    clearSelection();
+                    return;
+                }
+
+                if (selectedSquare === null) {
+                    selectSquare(square);
+                    return;
+                }
+
+                if (selectedSquare === square) {
+                    clearSelection();
+                    return;
+                }
+
+                if (isPossibleMove(square)) {
+                    queueMove(selectedSquare, square);
+                    return;
+                }
+
+                clearSelection();
+
+                if (canQueueMoveFrom(square)) {
+                    selectSquare(square);
+                }
+
+                return;
+            }
+
+            if (queuedMove) {
+                clearQueuedMove();
             }
 
             if (!isViewingLatestPosition() || gameOver) {
@@ -2499,6 +2626,8 @@ async function syncMovesFromServer() {
         if (serverMoves.length > 0) {
             playMoveSound();
         }
+
+        await playQueuedMoveIfReady();
     } catch (error) {
         multiplayerSyncFailures += 1;
         if (!gameStateNetworkWarningShown) {
@@ -2517,6 +2646,7 @@ function renderSavedMoveList() {
         moveItem.style.cursor = 'pointer';
 
         moveItem.addEventListener('click', function () {
+            clearQueuedMove();
             loadPositionUntil(index + 1);
         });
 
@@ -2714,18 +2844,21 @@ async function requestCoachAnalysis() {
 }
 
 document.getElementById('prev-move').addEventListener('click', function () {
+    clearQueuedMove();
     if (historyIndex > 0) {
         loadPositionUntil(historyIndex - 1);
     }
 });
 
 document.getElementById('next-move').addEventListener('click', function () {
+    clearQueuedMove();
     if (historyIndex < SAVED_MOVES.length) {
         loadPositionUntil(historyIndex + 1);
     }
 });
 
 document.getElementById('last-move').addEventListener('click', function () {
+    clearQueuedMove();
     loadPositionUntil(SAVED_MOVES.length);
 });
 
