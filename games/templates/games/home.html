@@ -8,7 +8,7 @@
 
 {% block content %}
 
-<h1>{% tr "home_title" %}</h1>
+<h1 class="home-title">{% tr "home_title" %}</h1>
 
 <main class="game-layout computer-game-layout">
 <div class="computer-side">
@@ -111,9 +111,11 @@
     const SAVED_MOVES = [];
     const COMPUTER_MODE = true;
     const UI_LANGUAGE = "{{ current_language }}";
+    const START_SOUND_URL = "{% static 'games/sounds/start-chess.mp3' %}";
+    const MOVE_SOUND_URL = "{% static 'games/sounds/piece.mp3' %}";
     let PLAYER_COLOR = 'white';
 </script>
 
-<script src="{% static 'games/board.js' %}?v=50"></script>
+<script src="{% static 'games/board.js' %}?v=54"></script>
 
 {% endblock %}

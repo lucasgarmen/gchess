@@ -21,7 +21,14 @@ let multiplayerSyncFailures = 0;
 let gameClock = typeof GAME_CLOCK !== 'undefined' ? GAME_CLOCK : null;
 let drawOffer = typeof DRAW_OFFER !== 'undefined' ? DRAW_OFFER : null;
 let timeoutSyncInProgress = false;
-let moveAudioContext = null;
+let moveSound = null;
+let startSound = null;
+const MOVE_SOUND_START_OFFSET = 0.45;
+let gameAudioContext = null;
+let moveSoundBuffer = null;
+let startSoundBuffer = null;
+let pendingStartSound = false;
+let audioUnlockBound = false;
 let gameStatePollingId = window.gchessGameStatePollingId || null;
 let gameChatPollingId = window.gchessGameChatPollingId || null;
 let gameStateAuthWarningShown = false;
@@ -152,102 +159,118 @@ const initialPosition = {
     h1: { type: 'rook', color: 'white' },
 };
 
-function getMoveAudioContext() {
+function buildSound(url, volume = 1) {
+    if (!url || typeof Audio === 'undefined') {
+        return null;
+    }
+
+    const audio = new Audio(url);
+    audio.preload = 'auto';
+    audio.volume = volume;
+    audio.load();
+    return audio;
+}
+
+function getGameAudioContext() {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 
     if (!AudioContextClass) {
         return null;
     }
 
-    if (!moveAudioContext) {
-        moveAudioContext = new AudioContextClass();
+    if (!gameAudioContext) {
+        gameAudioContext = new AudioContextClass();
     }
 
-    return moveAudioContext;
+    return gameAudioContext;
+}
+
+async function preloadSoundBuffer(url) {
+    const audioContext = getGameAudioContext();
+
+    if (!url || !audioContext || typeof fetch === 'undefined') {
+        return null;
+    }
+
+    try {
+        const response = await fetch(url, { cache: 'force-cache' });
+        const arrayBuffer = await response.arrayBuffer();
+        return await audioContext.decodeAudioData(arrayBuffer);
+    } catch (error) {
+        console.warn('No se pudo precargar el sonido:', error);
+        return null;
+    }
+}
+
+function playBuffer(buffer, startOffset = 0, volume = 1) {
+    const audioContext = getGameAudioContext();
+
+    if (!buffer || !audioContext) {
+        return false;
+    }
+
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+
+    const source = audioContext.createBufferSource();
+    const gain = audioContext.createGain();
+    source.buffer = buffer;
+    gain.gain.value = volume;
+    source.connect(gain);
+    gain.connect(audioContext.destination);
+    source.start(0, Math.min(startOffset, buffer.duration));
+    return true;
+}
+
+function playAudio(audio, startOffset = 0) {
+    if (!audio) {
+        return Promise.resolve(false);
+    }
+
+    audio.currentTime = startOffset;
+    return audio.play()
+        .then(() => true)
+        .catch(() => false);
+}
+
+function unlockStartSoundOnFirstInteraction() {
+    if (audioUnlockBound || !pendingStartSound) {
+        return;
+    }
+
+    audioUnlockBound = true;
+
+    const retryStartSound = () => {
+        pendingStartSound = false;
+        playAudio(startSound);
+        window.removeEventListener('pointerdown', retryStartSound);
+        window.removeEventListener('keydown', retryStartSound);
+    };
+
+    // Browsers may block autoplay; play the start sound on the first real interaction.
+    window.addEventListener('pointerdown', retryStartSound, { once: true });
+    window.addEventListener('keydown', retryStartSound, { once: true });
+}
+
+function playStartSound() {
+    const playedFromBuffer = playBuffer(startSoundBuffer);
+
+    if (playedFromBuffer) {
+        return;
+    }
+
+    playAudio(startSound).then((played) => {
+        if (!played) {
+            pendingStartSound = true;
+            unlockStartSoundOnFirstInteraction();
+        }
+    });
 }
 
 function playMoveSound() {
-    try {
-        const audioContext = getMoveAudioContext();
-
-        if (!audioContext) {
-            return;
-        }
-
-        if (audioContext.state === 'suspended') {
-            audioContext.resume();
-        }
-
-        const now = audioContext.currentTime;
-        const duration = 0.16;
-        const bufferSize = Math.max(1, Math.floor(audioContext.sampleRate * duration));
-        const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-        const samples = noiseBuffer.getChannelData(0);
-
-        for (let i = 0; i < bufferSize; i += 1) {
-            const decay = 1 - (i / bufferSize);
-            samples[i] = (Math.random() * 2 - 1) * decay * decay;
-        }
-
-        const noise = audioContext.createBufferSource();
-        const lowpass = audioContext.createBiquadFilter();
-        const hollow = audioContext.createBiquadFilter();
-        const thump = audioContext.createOscillator();
-        const body = audioContext.createOscillator();
-        const noiseGain = audioContext.createGain();
-        const thumpGain = audioContext.createGain();
-        const bodyGain = audioContext.createGain();
-        const masterGain = audioContext.createGain();
-
-        noise.buffer = noiseBuffer;
-        lowpass.type = 'lowpass';
-        lowpass.frequency.setValueAtTime(620, now);
-        lowpass.Q.setValueAtTime(0.85, now);
-
-        hollow.type = 'bandpass';
-        hollow.frequency.setValueAtTime(185, now);
-        hollow.Q.setValueAtTime(7.5, now);
-
-        thump.type = 'sine';
-        thump.frequency.setValueAtTime(92, now);
-        thump.frequency.exponentialRampToValueAtTime(46, now + duration);
-
-        body.type = 'triangle';
-        body.frequency.setValueAtTime(138, now);
-        body.frequency.exponentialRampToValueAtTime(82, now + 0.12);
-
-        noiseGain.gain.setValueAtTime(0.0001, now);
-        noiseGain.gain.exponentialRampToValueAtTime(0.22, now + 0.003);
-        noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.105);
-
-        thumpGain.gain.setValueAtTime(0.0001, now);
-        thumpGain.gain.exponentialRampToValueAtTime(0.28, now + 0.004);
-        thumpGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.145);
-
-        bodyGain.gain.setValueAtTime(0.0001, now);
-        bodyGain.gain.exponentialRampToValueAtTime(0.16, now + 0.008);
-        bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
-
-        masterGain.gain.setValueAtTime(1.25, now);
-
-        noise.connect(lowpass);
-        lowpass.connect(hollow);
-        hollow.connect(noiseGain);
-        noiseGain.connect(masterGain);
-        thump.connect(thumpGain);
-        thumpGain.connect(masterGain);
-        body.connect(bodyGain);
-        bodyGain.connect(masterGain);
-        masterGain.connect(audioContext.destination);
-
-        noise.start(now);
-        noise.stop(now + duration);
-        thump.start(now);
-        thump.stop(now + duration);
-        body.start(now);
-        body.stop(now + duration);
-    } catch (error) {
-        console.error('Erro ao reproduzir som da jogada:', error);
+    if (!playBuffer(moveSoundBuffer, MOVE_SOUND_START_OFFSET)) {
+        playAudio(moveSound, MOVE_SOUND_START_OFFSET);
     }
 }
 
@@ -729,15 +752,14 @@ async function playAnalysisMove(fromSquare, toSquare, shouldAnimate = true) {
     const movingColor = fromSquare.dataset.color;
     const from = fromSquare.dataset.coord;
     const to = toSquare.dataset.coord;
+    const isEnPassantCapture = movingType === 'pawn' && from[0] !== to[0] && toSquare.dataset.color === '';
 
     if (shouldAnimate) {
         await animateMove(fromSquare, toSquare);
     }
 
     if (
-        movingType === 'pawn' &&
-        from[0] !== to[0] &&
-        toSquare.dataset.color === ''
+        isEnPassantCapture
     ) {
         const capturedPawnSquare = getSquare(to[0] + from[1]);
 
@@ -764,6 +786,7 @@ async function playAnalysisMove(fromSquare, toSquare, shouldAnimate = true) {
     }
 
     movePiece(fromSquare, toSquare);
+    playMoveSound();
 
     if (isPromotionMove(movingType, movingColor, to)) {
         const promotedType = await choosePromotionPiece(toSquare, movingColor);
@@ -891,6 +914,7 @@ async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromot
 
     const from = fromSquare.dataset.coord;
     const to = toSquare.dataset.coord;
+    const isEnPassantCapture = movingType === 'pawn' && from[0] !== to[0] && toSquare.dataset.color === '';
 
     if (shouldAnimate) {
         await animateMove(fromSquare, toSquare);
@@ -898,9 +922,7 @@ async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromot
 
     // comer al paso
     if (
-        movingType === 'pawn' &&
-        from[0] !== to[0] &&
-        toSquare.dataset.color === ''
+        isEnPassantCapture
     ) {
         const capturedPawnCoord = to[0] + from[1];
         const capturedPawnSquare = document.querySelector(`[data-coord="${capturedPawnCoord}"]`);
@@ -927,6 +949,7 @@ async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromot
     }
 
     movePiece(fromSquare, toSquare);
+    playMoveSound();
 
     let promotedType = null;
 
@@ -969,7 +992,6 @@ async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromot
     updateTurnIndicator();
     updateHistoryControls();
     updateCapturedMaterial();
-    playMoveSound();
 
     saveMoveToDatabase(playedMove, {
         finished: gameEnded,
@@ -1204,6 +1226,28 @@ for (let row = 8; row >= 1; row--) {
         });
 
         board.appendChild(square);
+    }
+}
+
+moveSound = buildSound(typeof MOVE_SOUND_URL !== 'undefined' ? MOVE_SOUND_URL : null, 1);
+startSound = buildSound(typeof START_SOUND_URL !== 'undefined' ? START_SOUND_URL : null, 1);
+preloadSoundBuffer(typeof MOVE_SOUND_URL !== 'undefined' ? MOVE_SOUND_URL : null).then((buffer) => {
+    moveSoundBuffer = buffer;
+});
+preloadSoundBuffer(typeof START_SOUND_URL !== 'undefined' ? START_SOUND_URL : null).then((buffer) => {
+    startSoundBuffer = buffer;
+});
+
+if (isMultiplayerMode() && SAVED_MOVES.length === 0 && typeof GAME_ID !== 'undefined' && GAME_ID) {
+    const startSoundKey = `gchess-start-sound-${GAME_ID}`;
+
+    try {
+        if (window.sessionStorage.getItem(startSoundKey) !== 'played') {
+            window.sessionStorage.setItem(startSoundKey, 'played');
+            playStartSound();
+        }
+    } catch (error) {
+        playStartSound();
     }
 }
 

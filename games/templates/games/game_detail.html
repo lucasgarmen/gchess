@@ -163,8 +163,10 @@
     const GAME_CLOCK = parseJsonScript('game-clock-data', null);
     const DRAW_OFFER = parseJsonScript('draw-offer-data', null);
     const UI_LANGUAGE = "{{ current_language }}";
+    const START_SOUND_URL = "{% static 'games/sounds/start-chess.mp3' %}";
+    const MOVE_SOUND_URL = "{% static 'games/sounds/piece.mp3' %}";
 </script>
 
-<script src="{% static 'games/board.js' %}?v=50"></script>
+<script src="{% static 'games/board.js' %}?v=54"></script>
 
 {% endblock %}
