@@ -1293,6 +1293,25 @@ def configured_stockfish_path():
         logger.info("Using Stockfish from STOCKFISH_PATH: %s", discovered_path)
         return discovered_path, ""
 
+    fallback_path = shutil.which("stockfish")
+
+    if fallback_path:
+        logger.warning(
+            "STOCKFISH_PATH=%r was not found. Falling back to Stockfish on PATH: %s",
+            stockfish_path,
+            fallback_path,
+        )
+        return fallback_path, ""
+
+    for common_path in ("/usr/games/stockfish", "/usr/bin/stockfish", "/usr/local/bin/stockfish"):
+        if Path(common_path).exists():
+            logger.warning(
+                "STOCKFISH_PATH=%r was not found. Falling back to Stockfish at: %s",
+                stockfish_path,
+                common_path,
+            )
+            return common_path, ""
+
     return "", f"Stockfish was not found at STOCKFISH_PATH={stockfish_path!r}."
 
 
