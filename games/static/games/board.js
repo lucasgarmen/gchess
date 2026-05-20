@@ -294,7 +294,7 @@ const pieceFallbacks = {
 };
 
 const pieceFileNames = {
-    pawn_white: 'pawn_withe.png',
+    pawn_white: 'pawn_white.png',
 };
 
 const pieceValues = {
