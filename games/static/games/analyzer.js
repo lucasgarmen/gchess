@@ -1,5 +1,6 @@
 const analysisComment = document.getElementById('analysis-comment');
 
+//funçao atualiza comentario do coach a cada jogada
 function updateAnalysisComment() {
     if (!analysisComment) return;
 

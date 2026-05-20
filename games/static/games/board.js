@@ -39,20 +39,22 @@ let gameChatNetworkWarningShown = false;
 
 const DRAG_PIECE_SCALE = 1.7;
 
+//Funcçao para redireccionar usuario que nao está logueado
 function shouldStopPollingForAuth(response) {
     return response.redirected ||
         response.status === 401 ||
-        response.status === 403 ||
+        response.status === 403 ||  //Caso nao esteja logueado ou receba erro, ele é redireccionado para /login
         response.url.includes('/accounts/login/');
 }
 
+//Funções para freiar auto polling
 function stopGameStatePolling(reason) {
     if (gameStatePollingId) {
         clearInterval(gameStatePollingId);
         gameStatePollingId = null;
         window.gchessGameStatePollingId = null;
     }
-
+    //Serve para mostrar o warning:
     if (!gameStateAuthWarningShown) {
         console.warn(reason);
         gameStateAuthWarningShown = true;
@@ -65,13 +67,14 @@ function stopGameChatPolling(reason) {
         gameChatPollingId = null;
         window.gchessGameChatPollingId = null;
     }
-
+//freia autopolling do chats
     if (!gameChatAuthWarningShown) {
         console.warn(reason);
         gameChatAuthWarningShown = true;
     }
 }
 
+//Função para tradução de palavras individuais
 function uiText(key, fallback) {
     if (typeof UI_TEXTS !== 'undefined' && UI_TEXTS[key]) {
         return UI_TEXTS[key];
@@ -80,6 +83,7 @@ function uiText(key, fallback) {
     return fallback;
 }
 
+//Variável usada para verificar se ainda o enroque é possivel
 let castlingRights = {
     white: {
         kingMoved: false,
@@ -160,8 +164,9 @@ const initialPosition = {
     h1: { type: 'rook', color: 'white' },
 };
 
+//função para implementar sonido nos movimentos
 function buildSound(url, volume = 1) {
-    if (!url || typeof Audio === 'undefined') {
+    if (!url || typeof Audio === 'undefined') {  //en caso de erro ou falta de som, nao retorna som
         return null;
     }
 
@@ -171,7 +176,7 @@ function buildSound(url, volume = 1) {
     audio.load();
     return audio;
 }
-
+//função especifica de audio
 function getGameAudioContext() {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 
@@ -186,6 +191,7 @@ function getGameAudioContext() {
     return gameAudioContext;
 }
 
+//função para ter o som preparado para uso (precarregado)
 async function preloadSoundBuffer(url) {
     const audioContext = getGameAudioContext();
 
@@ -203,6 +209,7 @@ async function preloadSoundBuffer(url) {
     }
 }
 
+//Utiliza sonido precarregado
 function playBuffer(buffer, startOffset = 0, volume = 1) {
     const audioContext = getGameAudioContext();
 
@@ -224,6 +231,7 @@ function playBuffer(buffer, startOffset = 0, volume = 1) {
     return true;
 }
 
+//realiza som em caso de nao conseguir implementar o playBuffer
 function playAudio(audio, startOffset = 0) {
     if (!audio) {
         return Promise.resolve(false);
@@ -249,11 +257,12 @@ function unlockStartSoundOnFirstInteraction() {
         window.removeEventListener('keydown', retryStartSound);
     };
 
-    // Browsers may block autoplay; play the start sound on the first real interaction.
+    // em caso de bloqueio de audio em navegador, usa som de inicio
     window.addEventListener('pointerdown', retryStartSound, { once: true });
     window.addEventListener('keydown', retryStartSound, { once: true });
 }
 
+//som do começo de partida
 function playStartSound() {
     const playedFromBuffer = playBuffer(startSoundBuffer);
 
@@ -269,6 +278,7 @@ function playStartSound() {
     });
 }
 
+//função de movimento de peças
 function playMoveSound() {
     if (!playBuffer(moveSoundBuffer, MOVE_SOUND_START_OFFSET)) {
         playAudio(moveSound, MOVE_SOUND_START_OFFSET);
@@ -277,6 +287,7 @@ function playMoveSound() {
 
 const letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
+//Peças faltantes
 const pieceFallbacks = {
     queen_white: '♕',
     queen_black: '♛',
@@ -350,6 +361,7 @@ function canPlayerMoveFrom(square) {
     return !isComputerMode() || currentTurn === playerColor();
 }
 
+//Deixa a jogada pronta, mas nao consegue mover caso nao seja sua hora.
 function canQueueMoveFrom(square) {
     return isMultiplayerMode() &&
         !analysisMode &&
@@ -360,6 +372,7 @@ function canQueueMoveFrom(square) {
         squareColor(square) === playerColor();
 }
 
+//atualizador de estado do card
 function updateTurnIndicator() {
     if (analysisMode) {
         turnIndicator.innerText = uiText('analysis_mode_testing', 'Modo análisis: pruebas temporarias');

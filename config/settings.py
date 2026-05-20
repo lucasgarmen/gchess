@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import dj_database_url
 from importlib.util import find_spec
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
