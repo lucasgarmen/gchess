@@ -19,7 +19,6 @@ let analysisPositions = [];
 let analysisPositionIndex = 0;
 let queuedMove = null;
 let multiplayerSyncFailures = 0;
-let lastGameStateVersion = null;
 let gameClock = typeof GAME_CLOCK !== 'undefined' ? GAME_CLOCK : null;
 let drawOffer = typeof DRAW_OFFER !== 'undefined' ? DRAW_OFFER : null;
 let timeoutSyncInProgress = false;
@@ -40,20 +39,7 @@ let gameStateNetworkWarningShown = false;
 let gameChatNetworkWarningShown = false;
 
 const DRAG_PIECE_SCALE = 1.7;
-const GAME_STATE_RETRY_INTERVAL_MS = 1000;
-
-function scheduleGameStateSync(delay = 0) {
-    if (!isMultiplayerMode() || gameStatePollingId) {
-        return;
-    }
-
-    gameStatePollingId = setTimeout(() => {
-        gameStatePollingId = null;
-        window.gchessGameStatePollingId = null;
-        syncMovesFromServer(true);
-    }, delay);
-    window.gchessGameStatePollingId = gameStatePollingId;
-}
+const GAME_STATE_POLL_INTERVAL_MS = 1000;
 
 //Funcçao para redireccionar usuario que nao está logueado
 function shouldStopPollingForAuth(response) {
@@ -1419,7 +1405,9 @@ if (clockIsEnabled()) {
 }
 
 if (isMultiplayerMode() && !gameStatePollingId) {
-    scheduleGameStateSync();
+    syncMovesFromServer();
+    gameStatePollingId = setInterval(syncMovesFromServer, GAME_STATE_POLL_INTERVAL_MS);
+    window.gchessGameStatePollingId = gameStatePollingId;
 }
 
 if (gameChatToggle && GAME_ID && !gameChatPollingId) {
@@ -2612,10 +2600,7 @@ function movesAreEqual(firstMove, secondMove) {
         (firstMove.promotion || null) === (secondMove.promotion || null);
 }
 
-async function syncMovesFromServer(keepWatching = false) {
-    let continueWatching = keepWatching;
-    let nextSyncDelay = 0;
-
+async function syncMovesFromServer() {
     if (
         typeof GAME_ID === 'undefined' ||
         typeof ANALYZER_MODE !== 'undefined' && ANALYZER_MODE ||
@@ -2623,19 +2608,13 @@ async function syncMovesFromServer(keepWatching = false) {
         promotionPending ||
         gameStateLoading
     ) {
-        if (keepWatching && !gameStateLoading) {
-            scheduleGameStateSync(GAME_STATE_RETRY_INTERVAL_MS);
-        }
         return;
     }
 
     gameStateLoading = true;
 
     try {
-        const stateUrl = keepWatching
-            ? `/games/${GAME_ID}/state/wait/?version=${encodeURIComponent(lastGameStateVersion || '')}&_=${Date.now()}`
-            : `/games/${GAME_ID}/state/?_=${Date.now()}`;
-        const response = await fetch(stateUrl, {
+        const response = await fetch(`/games/${GAME_ID}/state/?_=${Date.now()}`, {
             cache: 'no-store',
             headers: {
                 'Accept': 'application/json',
@@ -2644,13 +2623,11 @@ async function syncMovesFromServer(keepWatching = false) {
 
         if (shouldStopPollingForAuth(response)) {
             // Stop polling after login redirects so logged-out tabs do not spam Django.
-            continueWatching = false;
             stopGameStatePolling('Polling de partida detenido: la sesiÃ³n parece haber expirado.');
             return;
         }
 
         if (!response.ok) {
-            nextSyncDelay = GAME_STATE_RETRY_INTERVAL_MS;
             multiplayerSyncFailures += 1;
             if (!gameStateNetworkWarningShown) {
                 console.warn('No se pudo actualizar el estado de la partida:', response.status, response.statusText);
@@ -2662,7 +2639,6 @@ async function syncMovesFromServer(keepWatching = false) {
         multiplayerSyncFailures = 0;
         gameStateNetworkWarningShown = false;
         const data = await response.json();
-        lastGameStateVersion = data.version || lastGameStateVersion;
         applyClockState(data.clock);
         applyDrawOfferState(data.draw_offer);
         showServerGameResult(data);
@@ -2703,7 +2679,6 @@ async function syncMovesFromServer(keepWatching = false) {
 
         await playQueuedMoveIfReady();
     } catch (error) {
-        nextSyncDelay = GAME_STATE_RETRY_INTERVAL_MS;
         multiplayerSyncFailures += 1;
         if (!gameStateNetworkWarningShown) {
             console.warn('No se pudo sincronizar la partida:', error);
@@ -2711,9 +2686,6 @@ async function syncMovesFromServer(keepWatching = false) {
         }
     } finally {
         gameStateLoading = false;
-        if (continueWatching) {
-            scheduleGameStateSync(nextSyncDelay);
-        }
     }
 }
 

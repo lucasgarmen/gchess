@@ -14,7 +14,6 @@ import chess
 import random
 import re
 import shutil
-import time
 from io import StringIO
 from pathlib import Path
 from django.http import JsonResponse
@@ -43,8 +42,6 @@ MAX_PGN_BYTES = 80 * 1024
 MAX_TRAINER_QUESTION_CHARS = 500
 MAX_CHAT_MESSAGE_CHARS = 500
 logger = logging.getLogger(__name__)
-GAME_STATE_WAIT_SECONDS = 25
-GAME_STATE_WAIT_POLL_SECONDS = 0.4
 
 
 def rate_limit(limit, window_seconds, key_prefix):
@@ -499,17 +496,6 @@ def serialize_moves(game):
     ]
 
 
-def game_state_version(game):
-    last_saved_move = game.moves.order_by('-move_number', '-id').only('id').first()
-    return ':'.join([
-        game.status or '',
-        game.result or '',
-        game.draw_offer_by_color or '',
-        str(game.moves.count()),
-        str(last_saved_move.id if last_saved_move else 0),
-    ])
-
-
 def serialize_game_state(game, user):
     board, board_error = board_from_game_moves(game)
     moves = serialize_moves(game)
@@ -528,7 +514,7 @@ def serialize_game_state(game, user):
         'result': game.result if game.result in ('white', 'black', 'draw') else None,
         'game_finished': game.status == 'finished',
         'winner': game.result if game.result in ('white', 'black') else None,
-        'version': game_state_version(game),
+        'version': f'{game.status}:{game.result}:{len(moves)}:{last_saved_move.id if last_saved_move else 0}',
         'changed_at': state_changed_at.isoformat() if state_changed_at else None,
         'board_error': board_error,
         'clock': serialize_clock(game),
@@ -1197,28 +1183,6 @@ def game_state(request, game_id):
     response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response['Pragma'] = 'no-cache'
     return response
-
-
-@login_required
-@rate_limit(120, 60, 'game-state-wait')
-def game_state_wait(request, game_id):
-    touch_presence(request.user)
-    seen_version = request.GET.get('version') or ''
-    deadline = time.monotonic() + GAME_STATE_WAIT_SECONDS
-    game = get_game_for_user(game_id, request.user)
-
-    while True:
-        finish_clock_if_expired(game)
-        current_version = game_state_version(game)
-
-        if not seen_version or current_version != seen_version or time.monotonic() >= deadline:
-            response = JsonResponse(serialize_game_state(game, request.user))
-            response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-            response['Pragma'] = 'no-cache'
-            return response
-
-        time.sleep(GAME_STATE_WAIT_POLL_SECONDS)
-        game = get_game_for_user(game_id, request.user)
 
 
 @login_required
