@@ -34,6 +34,10 @@ let gameStatePollingId = window.gchessGameStatePollingId || null;
 let gameChatPollingId = window.gchessGameChatPollingId || null;
 let gameStateLoading = false;
 let pendingMoveSaveCount = 0;
+let gameSocket = null;
+let gameSocketConnected = false;
+let gameSocketFallbackActive = false;
+let gameSocketReconnectId = null;
 let gameStateAuthWarningShown = false;
 let gameChatAuthWarningShown = false;
 let gameStateNetworkWarningShown = false;
@@ -41,6 +45,7 @@ let gameChatNetworkWarningShown = false;
 
 const DRAG_PIECE_SCALE = 1.7;
 const GAME_STATE_POLL_INTERVAL_MS = 1000;
+const GAME_SOCKET_RECONNECT_MS = 3000;
 const POLLING_LOG_PREFIX = '[gchess polling]';
 
 function pollingLog(message, details = {}) {
@@ -50,6 +55,14 @@ function pollingLog(message, details = {}) {
 function lastKnownMoveId() {
     const knownMove = SAVED_MOVES.length > 0 ? SAVED_MOVES[SAVED_MOVES.length - 1] : null;
     return knownMove && knownMove.id ? knownMove.id : null;
+}
+
+function currentUserId() {
+    if (typeof CURRENT_USER_ID === 'undefined') {
+        return null;
+    }
+
+    return Number(CURRENT_USER_ID) || null;
 }
 
 //Funcçao para redireccionar usuario que nao está logueado
@@ -1424,15 +1437,12 @@ if (isMultiplayerMode() && !gameStatePollingId) {
         currentTurn: currentTurn,
         playerColor: playerColor(),
     });
-    syncMovesFromServer();
-    gameStatePollingId = setInterval(syncMovesFromServer, GAME_STATE_POLL_INTERVAL_MS);
-    window.gchessGameStatePollingId = gameStatePollingId;
+    startGameStatePolling();
+    connectGameSocket();
 }
 
-if (gameChatToggle && GAME_ID && !gameChatPollingId) {
-    fetchGameChat();
-    gameChatPollingId = setInterval(fetchGameChat, 4000);
-    window.gchessGameChatPollingId = gameChatPollingId;
+if (gameChatToggle && typeof GAME_ID !== 'undefined' && GAME_ID && !gameChatPollingId) {
+    startGameChatPolling();
 }
 
 function clockIsEnabled() {
@@ -1624,6 +1634,7 @@ function renderGameChat(data) {
         data.messages.forEach(function (message) {
             const item = document.createElement('div');
             item.className = message.mine ? 'game-chat-message game-chat-message-mine' : 'game-chat-message';
+            item.dataset.messageId = message.id;
 
             const meta = document.createElement('span');
             meta.className = 'game-chat-meta';
@@ -1642,6 +1653,48 @@ function renderGameChat(data) {
     const unreadCount = data.unread_count || 0;
     gameChatCount.innerText = unreadCount;
     gameChatCount.hidden = gameChatOpen || unreadCount === 0;
+}
+
+function appendGameChatMessage(message) {
+    if (!gameChatMessages || !gameChatCount) {
+        return;
+    }
+
+    if (gameChatMessages.querySelector(`[data-message-id="${message.id}"]`)) {
+        return;
+    }
+
+    const empty = gameChatMessages.querySelector('.game-chat-empty');
+    if (empty) {
+        empty.remove();
+    }
+
+    const item = document.createElement('div');
+    const mine = message.mine || message.sender_id === currentUserId();
+    item.className = mine ? 'game-chat-message game-chat-message-mine' : 'game-chat-message';
+    item.dataset.messageId = message.id;
+
+    const meta = document.createElement('span');
+    meta.className = 'game-chat-meta';
+    meta.innerText = `${message.sender} - ${message.created_at}`;
+
+    const text = document.createElement('p');
+    text.innerText = message.text;
+
+    item.append(meta, text);
+    gameChatMessages.appendChild(item);
+    gameChatMessages.scrollTop = gameChatMessages.scrollHeight;
+
+    if (gameChatOpen) {
+        fetchGameChat();
+        return;
+    }
+
+    if (!mine) {
+        const unreadCount = Number(gameChatCount.innerText || '0') + 1;
+        gameChatCount.innerText = unreadCount;
+        gameChatCount.hidden = unreadCount === 0;
+    }
 }
 
 async function fetchGameChat() {
@@ -2436,6 +2489,12 @@ function saveMoveToDatabase(moveData, gameState = {}) {
         winner: gameState.winner,
         result: gameState.result,
     };
+
+    if (sendGameSocketMessage({ type: 'move.create', move: payload })) {
+        pendingMoveSaveCount += 1;
+        return;
+    }
+
     pendingMoveSaveCount += 1;
 
     fetch(`/games/${GAME_ID}/save-move/`, {
@@ -2636,6 +2695,85 @@ function movesAreEqual(firstMove, secondMove) {
         (firstMove.promotion || null) === (secondMove.promotion || null);
 }
 
+function updateLocalMoveIds(serverMoves) {
+    serverMoves.forEach((serverMove, index) => {
+        if (
+            SAVED_MOVES[index] &&
+            serverMove.id &&
+            !SAVED_MOVES[index].id &&
+            movesAreEqual(serverMove, SAVED_MOVES[index])
+        ) {
+            SAVED_MOVES[index].id = serverMove.id;
+        }
+    });
+}
+
+async function applyGameStateFromServer(data) {
+    applyClockState(data.clock);
+    applyDrawOfferState(data.draw_offer);
+    showServerGameResult(data);
+
+    if (data.game_finished) {
+        gameOver = true;
+
+        if (data.winner === 'white' || data.winner === 'black') {
+            showGameStatus(data.winner === 'white' ? uiText('white_wins', 'Vitória das brancas') : uiText('black_wins', 'Vitória das pretas'));
+        }
+    }
+
+    const serverMoves = data.moves || [];
+    const oldMoveCount = SAVED_MOVES.length;
+    if (pendingMoveSaveCount > 0 && serverMoves.length < oldMoveCount) {
+        pollingLog('respuesta anterior ignorada mientras se guarda jugada local', {
+            serverMoveCount: serverMoves.length,
+            localMoveCount: oldMoveCount,
+            pendingMoveSaveCount: pendingMoveSaveCount,
+        });
+        return;
+    }
+
+    const wasViewingLatestPosition = isViewingLatestPosition();
+    const hasDifferentMoves = serverMoves.length !== SAVED_MOVES.length ||
+        serverMoves.some((move, index) => !movesAreEqual(move, SAVED_MOVES[index]));
+
+    if (!hasDifferentMoves) {
+        updateLocalMoveIds(serverMoves);
+        return;
+    }
+
+    pollingLog('movimiento nuevo detectado', {
+        oldMoveCount: oldMoveCount,
+        serverMoveCount: serverMoves.length,
+        oldLastMoveId: lastKnownMoveId(),
+        serverLastMoveId: data.last_move_id,
+    });
+
+    const hasOnlyAppendedMoves = serverMoves.length > oldMoveCount &&
+        SAVED_MOVES.every((move, index) => movesAreEqual(move, serverMoves[index]));
+
+    SAVED_MOVES.splice(0, SAVED_MOVES.length, ...serverMoves);
+    renderSavedMoveList();
+
+    if (hasOnlyAppendedMoves && wasViewingLatestPosition) {
+        await applyAppendedServerMoves(serverMoves, oldMoveCount);
+    } else {
+        loadPositionUntil(SAVED_MOVES.length);
+    }
+
+    pollingLog('tablero actualizado', {
+        moveCount: SAVED_MOVES.length,
+        lastMoveId: lastKnownMoveId(),
+        currentTurn: currentTurn,
+        historyIndex: historyIndex,
+    });
+
+    if (serverMoves.length > oldMoveCount) {
+        playMoveSound();
+    }
+
+    await playQueuedMoveIfReady();
+}
+
 async function syncMovesFromServer() {
     if (
         typeof GAME_ID === 'undefined' ||
@@ -2760,6 +2898,156 @@ async function syncMovesFromServer() {
         }
     } finally {
         gameStateLoading = false;
+    }
+}
+
+function startGameStatePolling() {
+    if (!isMultiplayerMode() || gameStatePollingId) {
+        return;
+    }
+
+    syncMovesFromServer();
+    gameStatePollingId = setInterval(syncMovesFromServer, GAME_STATE_POLL_INTERVAL_MS);
+    window.gchessGameStatePollingId = gameStatePollingId;
+}
+
+function pauseGameStatePolling() {
+    if (gameStatePollingId) {
+        clearInterval(gameStatePollingId);
+        gameStatePollingId = null;
+        window.gchessGameStatePollingId = null;
+    }
+}
+
+function startGameChatPolling() {
+    if (!gameChatToggle || typeof GAME_ID === 'undefined' || !GAME_ID || gameChatPollingId) {
+        return;
+    }
+
+    fetchGameChat();
+    gameChatPollingId = setInterval(fetchGameChat, 4000);
+    window.gchessGameChatPollingId = gameChatPollingId;
+}
+
+function pauseGameChatPolling() {
+    if (gameChatPollingId) {
+        clearInterval(gameChatPollingId);
+        gameChatPollingId = null;
+        window.gchessGameChatPollingId = null;
+    }
+}
+
+function gameSocketUrl() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/ws/games/${GAME_ID}/`;
+}
+
+function connectGameSocket() {
+    if (
+        !isMultiplayerMode() ||
+        typeof GAME_ID === 'undefined' ||
+        !GAME_ID ||
+        typeof WebSocket === 'undefined' ||
+        gameSocketConnected ||
+        gameSocket && gameSocket.readyState === WebSocket.CONNECTING
+    ) {
+        return;
+    }
+
+    try {
+        gameSocket = new WebSocket(gameSocketUrl());
+    } catch (error) {
+        console.warn('No se pudo crear el WebSocket de la partida:', error);
+        enableGameSocketFallback();
+        return;
+    }
+
+    gameSocket.addEventListener('open', function () {
+        gameSocketConnected = true;
+        gameSocketFallbackActive = false;
+        pauseGameStatePolling();
+        pauseGameChatPolling();
+        console.log('[gchess ws] conectado', { gameId: GAME_ID });
+        syncMovesFromServer();
+        fetchGameChat();
+    });
+
+    gameSocket.addEventListener('message', function (event) {
+        handleGameSocketMessage(event);
+    });
+
+    gameSocket.addEventListener('close', function () {
+        gameSocketConnected = false;
+        gameSocket = null;
+        enableGameSocketFallback();
+        scheduleGameSocketReconnect();
+    });
+
+    gameSocket.addEventListener('error', function (error) {
+        console.warn('WebSocket de partida con error; usando polling como fallback.', error);
+        enableGameSocketFallback();
+    });
+}
+
+function enableGameSocketFallback() {
+    if (gameSocketFallbackActive) {
+        return;
+    }
+
+    gameSocketFallbackActive = true;
+    startGameStatePolling();
+    startGameChatPolling();
+}
+
+function scheduleGameSocketReconnect() {
+    if (gameSocketReconnectId || !isMultiplayerMode()) {
+        return;
+    }
+
+    gameSocketReconnectId = setTimeout(function () {
+        gameSocketReconnectId = null;
+        connectGameSocket();
+    }, GAME_SOCKET_RECONNECT_MS);
+}
+
+function sendGameSocketMessage(message) {
+    if (!gameSocketConnected || !gameSocket || gameSocket.readyState !== WebSocket.OPEN) {
+        return false;
+    }
+
+    gameSocket.send(JSON.stringify(message));
+    return true;
+}
+
+async function handleGameSocketMessage(event) {
+    let data;
+
+    try {
+        data = JSON.parse(event.data);
+    } catch (error) {
+        console.warn('Mensaje WebSocket inválido:', event.data);
+        return;
+    }
+
+    if (data.type === 'connection.ready') {
+        return;
+    }
+
+    if (data.type === 'move.created' && data.state) {
+        pendingMoveSaveCount = Math.max(0, pendingMoveSaveCount - 1);
+        await applyGameStateFromServer(data.state);
+        return;
+    }
+
+    if (data.type === 'chat.message' && data.message) {
+        appendGameChatMessage(data.message);
+        return;
+    }
+
+    if (data.type === 'error') {
+        pendingMoveSaveCount = Math.max(0, pendingMoveSaveCount - 1);
+        console.warn('Error WebSocket:', data.error || data.status);
+        syncMovesFromServer();
     }
 }
 
@@ -3116,6 +3404,10 @@ if (gameChatForm) {
         gameChatInput.value = '';
 
         try {
+            if (sendGameSocketMessage({ type: 'chat.send', text })) {
+                return;
+            }
+
             const response = await fetch(`/games/${GAME_ID}/chat/`, {
                 method: 'POST',
                 headers: {

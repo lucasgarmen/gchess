@@ -489,7 +489,10 @@ class DeployReadinessTests(SimpleTestCase):
         self.assertIn("apt-get install -y stockfish", build)
         self.assertIn("collectstatic --no-input", build)
         self.assertIn("python manage.py migrate", build)
-        self.assertIn("gunicorn config.wsgi:application", procfile)
+        self.assertIn("daphne", procfile)
+        self.assertIn("config.asgi:application", procfile)
+        self.assertIn("channels", requirements)
+        self.assertIn("daphne", requirements)
         self.assertIn("gunicorn", requirements)
         self.assertIn("whitenoise", requirements)
 

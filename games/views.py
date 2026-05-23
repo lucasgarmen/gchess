@@ -44,6 +44,14 @@ MAX_CHAT_MESSAGE_CHARS = 500
 logger = logging.getLogger(__name__)
 
 
+class GameActionError(Exception):
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+        self.payload = message if isinstance(message, dict) else {'error': message}
+
+
 def rate_limit(limit, window_seconds, key_prefix):
     def decorator(view_func):
         def wrapped(request, *args, **kwargs):
@@ -652,75 +660,85 @@ def game_create(request):
 @login_required
 @require_POST
 @rate_limit(60, 60, 'save-move')
-@transaction.atomic
 def save_move(request, game_id):
     touch_presence(request.user)
-    game = get_object_or_404(
-        ChessGame.objects.select_for_update(),
-        game_access_filter(request.user),
-        id=game_id,
-    )
     try:
         data = parse_json_body(request)
     except ValueError as exc:
         return JsonResponse({'error': str(exc)}, status=400)
+
+    try:
+        result = save_move_for_user(game_id, request.user, data)
+    except GameActionError as exc:
+        return JsonResponse(exc.payload, status=exc.status)
+
+    return JsonResponse(result)
+
+
+@transaction.atomic
+def save_move_for_user(game_id, user, data):
+    game = get_object_or_404(
+        ChessGame.objects.select_for_update(),
+        game_access_filter(user),
+        id=game_id,
+    )
     timeout_winner = apply_clock_elapsed(game)
 
     if timeout_winner:
-        logger.info("Move rejected for game %s by user %s: clock expired.", game.id, request.user.id)
-        return JsonResponse({
+        logger.info("Move rejected for game %s by user %s: clock expired.", game.id, user.id)
+        raise GameActionError({
             'error': 'Tempo esgotado.',
             'clock': serialize_clock(game),
             'game_finished': True,
             'winner': timeout_winner,
         }, status=409)
 
-    player_color = player_color_for_game(game, request.user)
+    player_color = player_color_for_game(game, user)
     expected_color = 'white' if game.moves.count() % 2 == 0 else 'black'
 
     if game.status == 'finished':
-        logger.info("Move rejected for game %s by user %s: game is finished.", game.id, request.user.id)
-        return JsonResponse({'error': 'A partida ja terminou.'}, status=409)
+        logger.info("Move rejected for game %s by user %s: game is finished.", game.id, user.id)
+        raise GameActionError('A partida ja terminou.', status=409)
 
     if not player_color:
-        logger.warning("Move rejected for game %s by user %s: user is not a player.", game.id, request.user.id)
-        return JsonResponse({'error': 'Apenas jogadores da partida podem mover.'}, status=403)
+        logger.warning("Move rejected for game %s by user %s: user is not a player.", game.id, user.id)
+        raise GameActionError('Apenas jogadores da partida podem mover.', status=403)
 
     if player_color != expected_color:
-        logger.info("Move rejected for game %s by user %s: expected %s, got %s.", game.id, request.user.id, expected_color, player_color)
-        return JsonResponse({'error': 'Nao e sua vez.'}, status=403)
+        logger.info("Move rejected for game %s by user %s: expected %s, got %s.", game.id, user.id, expected_color, player_color)
+        raise GameActionError('Nao e sua vez.', status=403)
 
     board, board_error = board_from_game_moves(game)
 
     if board_error:
-        logger.warning("Move rejected for game %s by user %s: saved board is invalid (%s).", game.id, request.user.id, board_error)
-        return JsonResponse({'error': 'A posicao salva da partida esta invalida.'}, status=409)
+        logger.warning("Move rejected for game %s by user %s: saved board is invalid (%s).", game.id, user.id, board_error)
+        raise GameActionError('A posicao salva da partida esta invalida.', status=409)
 
     try:
         chess_move = build_chess_move_from_data(data)
     except (KeyError, ValueError):
-        logger.info("Move rejected for game %s by user %s: invalid payload.", game.id, request.user.id)
-        return JsonResponse({'error': 'Jogada invalida.'}, status=400)
+        logger.info("Move rejected for game %s by user %s: invalid payload.", game.id, user.id)
+        raise GameActionError('Jogada invalida.', status=400)
 
     if chess_move not in board.legal_moves:
-        logger.info("Move rejected for game %s by user %s: illegal move %s.", game.id, request.user.id, chess_move)
-        return JsonResponse({'error': 'Jogada ilegal nessa posicao.'}, status=400)
+        logger.info("Move rejected for game %s by user %s: illegal move %s.", game.id, user.id, chess_move)
+        raise GameActionError('Jogada ilegal nessa posicao.', status=400)
 
     moving_piece = board.piece_at(chess_move.from_square)
 
     if not moving_piece:
-        logger.info("Move rejected for game %s by user %s: no piece at origin.", game.id, request.user.id)
-        return JsonResponse({'error': 'Jogada invalida.'}, status=400)
+        logger.info("Move rejected for game %s by user %s: no piece at origin.", game.id, user.id)
+        raise GameActionError('Jogada invalida.', status=400)
 
     server_piece_color = 'white' if moving_piece.color == chess.WHITE else 'black'
 
     if server_piece_color != expected_color:
-        logger.info("Move rejected for game %s by user %s: attempted color %s on %s turn.", game.id, request.user.id, server_piece_color, expected_color)
-        return JsonResponse({'error': 'Nao e a vez dessa cor.'}, status=400)
+        logger.info("Move rejected for game %s by user %s: attempted color %s on %s turn.", game.id, user.id, server_piece_color, expected_color)
+        raise GameActionError('Nao e a vez dessa cor.', status=400)
 
     if server_piece_color != player_color:
-        logger.warning("Move rejected for game %s by user %s: attempted opponent color %s.", game.id, request.user.id, server_piece_color)
-        return JsonResponse({'error': 'Voce so pode mover suas proprias pecas.'}, status=403)
+        logger.warning("Move rejected for game %s by user %s: attempted opponent color %s.", game.id, user.id, server_piece_color)
+        raise GameActionError('Voce so pode mover suas proprias pecas.', status=403)
 
     draw_offer_declined_by_move = bool(
         game.draw_offer_by_color and game.draw_offer_by_color != server_piece_color
@@ -767,12 +785,12 @@ def save_move(request, game_id):
     logger.info(
         "Move saved for game %s by user %s: %s%s.",
         game.id,
-        request.user.id,
+        user.id,
         move.from_square,
         move.to_square,
     )
 
-    return JsonResponse({
+    return {
         'status': 'ok',
         'move_id': move.id,
         'clock': serialize_clock(game),
@@ -780,8 +798,9 @@ def save_move(request, game_id):
         'winner': game.result if game.result in ('white', 'black') else None,
         'result': game.result if game.result in ('white', 'black', 'draw') else None,
         'draw_reason': outcome.get('reason'),
-        'draw_offer': serialize_draw_offer(game, request.user),
-    })
+        'draw_offer': serialize_draw_offer(game, user),
+        'state': serialize_game_state(game, user),
+    }
 
 
 @login_required
@@ -1203,30 +1222,51 @@ def game_state(request, game_id):
 @rate_limit(120, 60, 'game-chat')
 def game_chat(request, game_id):
     touch_presence(request.user)
-    game = get_game_for_user(game_id, request.user)
-
-    if not player_color_for_game(game, request.user):
-        return JsonResponse({'error': 'Apenas jogadores da partida podem usar o chat.'}, status=403)
-
-    if request.method == 'POST':
-        try:
+    try:
+        if request.method == 'POST':
             data = parse_json_body(request)
-        except ValueError as exc:
-            return JsonResponse({'error': str(exc)}, status=400)
+            save_chat_message_for_user(game_id, request.user, data.get('text'))
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
+    except GameActionError as exc:
+        return JsonResponse(exc.payload, status=exc.status)
 
-        text = (data.get('text') or '').strip()
+    try:
+        return JsonResponse(serialize_game_chat_for_user(
+            game_id,
+            request.user,
+            mark_read=request.GET.get('mark_read') == '1',
+        ))
+    except GameActionError as exc:
+        return JsonResponse(exc.payload, status=exc.status)
 
-        if not text:
-            return JsonResponse({'error': 'Digite uma mensagem.'}, status=400)
 
-        if len(text) > MAX_CHAT_MESSAGE_CHARS:
-            return JsonResponse({'error': 'Mensagem muito longa.'}, status=400)
+def save_chat_message_for_user(game_id, user, text):
+    game = get_game_for_user(game_id, user)
 
-        GameChatMessage.objects.create(
-            game=game,
-            sender=request.user,
-            text=text,
-        )
+    if not player_color_for_game(game, user):
+        raise GameActionError('Apenas jogadores da partida podem usar o chat.', status=403)
+
+    text = (text or '').strip()
+
+    if not text:
+        raise GameActionError('Digite uma mensagem.', status=400)
+
+    if len(text) > MAX_CHAT_MESSAGE_CHARS:
+        raise GameActionError('Mensagem muito longa.', status=400)
+
+    return GameChatMessage.objects.create(
+        game=game,
+        sender=user,
+        text=text,
+    )
+
+
+def serialize_game_chat_for_user(game_id, user, mark_read=False):
+    game = get_game_for_user(game_id, user)
+
+    if not player_color_for_game(game, user):
+        raise GameActionError('Apenas jogadores da partida podem usar o chat.', status=403)
 
     messages = list(
         GameChatMessage.objects.filter(game=game)
@@ -1234,30 +1274,41 @@ def game_chat(request, game_id):
         .order_by('created_at', 'id')[:100]
     )
     latest_message = messages[-1] if messages else None
-    read_state, _ = GameChatRead.objects.get_or_create(game=game, user=request.user)
+    read_state, _ = GameChatRead.objects.get_or_create(game=game, user=user)
 
-    if request.GET.get('mark_read') == '1' and latest_message:
+    if mark_read and latest_message:
         read_state.last_read_message = latest_message
         read_state.save(update_fields=['last_read_message', 'updated_at'])
 
-    unread_query = GameChatMessage.objects.filter(game=game).exclude(sender=request.user)
+    unread_query = GameChatMessage.objects.filter(game=game).exclude(sender=user)
 
     if read_state.last_read_message_id:
         unread_query = unread_query.filter(id__gt=read_state.last_read_message_id)
 
-    return JsonResponse({
+    return {
         'messages': [
             {
                 'id': message.id,
                 'sender': message.sender.username,
-                'mine': message.sender_id == request.user.id,
+                'mine': message.sender_id == user.id,
                 'text': message.text,
                 'created_at': timezone.localtime(message.created_at).strftime('%H:%M'),
             }
             for message in messages
         ],
         'unread_count': unread_query.count(),
-    })
+    }
+
+
+def serialize_chat_message(message, user):
+    return {
+        'id': message.id,
+        'sender': message.sender.username,
+        'mine': message.sender_id == user.id,
+        'text': message.text,
+        'created_at': timezone.localtime(message.created_at).strftime('%H:%M'),
+    }
+
 
 import chess.pgn
 import chess.engine

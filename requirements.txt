@@ -1,5 +1,8 @@
 asgiref==3.11.1
+channels==4.3.2
+channels_redis==4.3.0
 chess==1.11.2
+daphne==4.2.1
 dj-database-url==3.0.1
 Django==6.0.5
 gunicorn==23.0.0
