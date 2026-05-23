@@ -7,6 +7,7 @@ from django.utils import timezone
 from .models import ChessGame
 from .forms import ChessGameForm
 from django.contrib.auth.decorators import login_required
+import asyncio
 import json
 import logging
 import os
@@ -21,8 +22,11 @@ from django.urls import reverse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST, require_http_methods
 from accounts.models import PlayerProfile
+from .engine_analysis import build_trainer_engine_context
+from .gemini_service import generate_gemini_explanation
 from .i18n import current_language, normalize_language, t
 from .models import ChessGame, GameChatMessage, GameChatRead, GameInvitation, Move, UserPresence
+from .prompts import build_trainer_chat_prompt
 
 PROMOTION_PIECES = {
     'queen': 'q',
@@ -1396,6 +1400,25 @@ def stockfish_missing_response(error_message=""):
         ),
     }, status=503)
 
+
+def open_stockfish_engine(stockfish_path):
+    proactor_policy = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
+
+    if os.name != "nt" or proactor_policy is None:
+        return chess.engine.SimpleEngine.popen_uci(stockfish_path)
+
+    previous_policy = asyncio.get_event_loop_policy()
+
+    if isinstance(previous_policy, proactor_policy):
+        return chess.engine.SimpleEngine.popen_uci(stockfish_path)
+
+    try:
+        asyncio.set_event_loop_policy(proactor_policy())
+        return chess.engine.SimpleEngine.popen_uci(stockfish_path)
+    finally:
+        asyncio.set_event_loop_policy(previous_policy)
+
+
 @login_required
 @require_POST
 @rate_limit(30, 60, 'engine-move')
@@ -1438,7 +1461,7 @@ def engine_move(request):
 
     engine = None
     try:
-        engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+        engine = open_stockfish_engine(stockfish_path)
         skill_level = LOW_ELO_SKILL_LEVELS.get(elo)
 
         if skill_level is not None and "Skill Level" in engine.options:
@@ -1583,7 +1606,7 @@ def coach_analysis(request):
 
     engine = None
     try:
-        engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+        engine = open_stockfish_engine(stockfish_path)
         before = engine.analyse(board, ANALYSIS_LIMIT)
         before_score = score_to_cp(before["score"].white())
         best_move = before.get("pv", [played_move])[0]
@@ -1684,11 +1707,33 @@ def trainer_chat(request):
 
     engine = None
     try:
-        engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
-        answer = build_trainer_chat_answer(engine, board, san_moves, question, player_color, language)
+        engine = open_stockfish_engine(stockfish_path)
+        answer = None
+        source = "stockfish_fallback"
+
+        try:
+            opening_name = detect_opening(san_moves)
+            engine_context = build_trainer_engine_context(
+                engine,
+                board,
+                san_moves,
+                question,
+                player_color,
+                language,
+                opening_name,
+            )
+            prompt = build_trainer_chat_prompt(question, engine_context, language)
+            answer = generate_gemini_explanation(prompt, namespace="trainer_chat")
+            source = "gemini" if answer else "stockfish_fallback"
+        except Exception as exc:
+            logger.warning("Gemini trainer context failed; using Stockfish fallback: %s", exc)
+
+        if not answer:
+            answer = build_trainer_chat_answer(engine, board, san_moves, question, player_color, language)
 
         return JsonResponse({
             "answer": answer,
+            "source": source,
         })
     except (chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError) as exc:
         logger.exception("Stockfish failed while answering trainer chat.")
@@ -1707,6 +1752,21 @@ def build_trainer_chat_answer(engine, board, san_moves, question, player_color, 
     score = score_to_cp(analysis["score"].white())
     opening_name = detect_opening(san_moves)
     player_is_to_move = (board.turn == chess.WHITE and player_color == "white") or (board.turn == chess.BLACK and player_color == "black")
+    proposed_move = None
+
+    try:
+        proposed_context = build_trainer_engine_context(
+            engine,
+            board,
+            san_moves,
+            question,
+            player_color,
+            language,
+            opening_name,
+        )
+        proposed_move = proposed_context.get("proposed_move")
+    except Exception:
+        proposed_move = None
 
     if best_move is None:
         return "Não encontrei uma recomendação clara nesta posição."
@@ -1714,6 +1774,53 @@ def build_trainer_chat_answer(engine, board, san_moves, question, player_color, 
     best_san = board.san(best_move)
     best_ideas = " ".join(describe_coach_ideas(board, best_move))
     evaluation = describe_position_for_player(score, player_color)
+
+    if proposed_move and not proposed_move.get("legal"):
+        raw_move = proposed_move.get("raw") or "esa jugada"
+        target = proposed_move.get("target")
+        target_text = f" hasta {target}" if target and target not in raw_move else ""
+
+        if language == 'es':
+            return (
+                f"No, {raw_move}{target_text} no es legal en esta posicion. "
+                f"Yo prefiero {best_san}; la idea es {best_ideas.lower()}"
+            )
+
+        if language == 'en':
+            return (
+                f"No, {raw_move}{target_text} is not legal in this position. "
+                f"I prefer {best_san}; the idea is: {best_ideas}"
+            )
+
+        return (
+            f"Nao, {raw_move}{target_text} nao e legal nesta posicao. "
+            f"Eu prefiro {best_san}; a ideia e: {best_ideas}"
+        )
+
+    if proposed_move and proposed_move.get("legal"):
+        change = proposed_move.get("change_for_mover_cp", 0)
+        move_san = proposed_move.get("move_san")
+        reply = proposed_move.get("engine_reply_san")
+
+        if language == 'es':
+            if change < -80:
+                return f"{move_san} parece floja: deja tu posicion bastante peor. La respuesta principal seria {reply or 'no clara'}, y yo miraria {best_san}."
+            if change < -30:
+                return f"{move_san} es jugable, pero algo imprecisa. Yo prefiero {best_san}; despues de {move_san}, la respuesta principal es {reply or 'no clara'}."
+            return f"Si, {move_san} parece razonable. Igual me gusta {best_san if best_san != move_san else move_san}; la respuesta principal es {reply or 'no clara'}."
+
+        if language == 'en':
+            if change < -80:
+                return f"{move_san} looks weak: it leaves your position clearly worse. The main reply is {reply or 'unclear'}, and I would look at {best_san}."
+            if change < -30:
+                return f"{move_san} is playable but a bit imprecise. I prefer {best_san}; after {move_san}, the main reply is {reply or 'unclear'}."
+            return f"Yes, {move_san} looks reasonable. I still like {best_san if best_san != move_san else move_san}; the main reply is {reply or 'unclear'}."
+
+        if change < -80:
+            return f"{move_san} parece fraca: deixa sua posicao bem pior. A resposta principal seria {reply or 'pouco clara'}, e eu olharia {best_san}."
+        if change < -30:
+            return f"{move_san} e jogavel, mas um pouco imprecisa. Eu prefiro {best_san}; depois de {move_san}, a resposta principal e {reply or 'pouco clara'}."
+        return f"Sim, {move_san} parece razoavel. Ainda gosto de {best_san if best_san != move_san else move_san}; a resposta principal e {reply or 'pouco clara'}."
 
     if language == 'es':
         if player_is_to_move:
@@ -1723,7 +1830,7 @@ def build_trainer_chat_answer(engine, board, san_moves, question, player_color, 
             )
 
         return (
-            f"Ahora juega el rival. La continuación indicada por el motor es {best_san}; "
+            f"Ahora juega el rival. Yo miraría especialmente {best_san}; "
             "mira qué amenaza crea y qué piezas quedan atacadas."
         )
 
@@ -1735,7 +1842,7 @@ def build_trainer_chat_answer(engine, board, san_moves, question, player_color, 
             )
 
         return (
-            f"It is your opponent's turn. The engine points to {best_san}; "
+            f"It is your opponent's turn. I would pay attention to {best_san}; "
             "watch the threat it creates and which pieces are attacked."
         )
 
@@ -1759,7 +1866,7 @@ def build_trainer_chat_answer(engine, board, san_moves, question, player_color, 
 
         return (
             "Agora é a vez do computador. Enquanto espera, observe a ameaça principal dele: "
-            f"a melhor continuação indicada é {best_san}, então preste atenção nas casas e peças ligadas a essa jogada."
+            f"eu prestaria atenção em {best_san} e nas casas ligadas a essa jogada."
         )
 
     if any(word in question_text for word in ("ameaça", "ameaças", "ataca", "ataque", "defendo", "defender")):
@@ -1768,7 +1875,7 @@ def build_trainer_chat_answer(engine, board, san_moves, question, player_color, 
 
     if any(word in question_text for word in ("melhor", "pior", "vantagem", "avalia", "ganhando", "perdendo")):
         return (
-            f"{evaluation} A sugestão do motor é {best_san}. "
+            f"{evaluation} Eu olharia primeiro para {best_san}. "
             f"O ponto importante é entender se você está ganhando atividade, material ou segurança do rei."
         )
 
@@ -2139,7 +2246,7 @@ def game_analyzer(request):
             board = game.board()
 
             try:
-                engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+                engine = open_stockfish_engine(stockfish_path)
 
                 move_number = 1
                 san_moves = []

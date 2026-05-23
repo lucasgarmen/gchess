@@ -3594,19 +3594,34 @@ if (playerColorSelect) {
 }
 
 const trainerChatForm = document.getElementById('trainer-chat-form');
+function submitTrainerChatQuestion() {
+    const input = document.getElementById('trainer-chat-input');
+    const question = input ? input.value.trim() : '';
+
+    if (!question || trainerChatThinking) {
+        return;
+    }
+
+    input.value = '';
+    askTrainerChat(question);
+}
+
 if (trainerChatForm) {
     trainerChatForm.addEventListener('submit', function (event) {
         event.preventDefault();
+        submitTrainerChatQuestion();
+    });
+}
 
-        const input = document.getElementById('trainer-chat-input');
-        const question = input ? input.value.trim() : '';
-
-        if (!question || trainerChatThinking) {
+const trainerChatInput = document.getElementById('trainer-chat-input');
+if (trainerChatInput) {
+    trainerChatInput.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) {
             return;
         }
 
-        input.value = '';
-        askTrainerChat(question);
+        event.preventDefault();
+        submitTrainerChatQuestion();
     });
 }
 
