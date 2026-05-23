@@ -294,6 +294,7 @@ class GameAccessTests(TestCase):
         self.assertEqual(data["turn"], "black")
         self.assertEqual(data["move_count"], 1)
         self.assertEqual(data["last_move"]["from"], "e2")
+        self.assertEqual(data["last_move_id"], data["last_move"]["id"])
         self.assertIn("version", data)
         self.assertEqual(response.headers["Cache-Control"], "no-store, no-cache, must-revalidate, max-age=0")
 

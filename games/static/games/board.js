@@ -33,6 +33,7 @@ let audioUnlockBound = false;
 let gameStatePollingId = window.gchessGameStatePollingId || null;
 let gameChatPollingId = window.gchessGameChatPollingId || null;
 let gameStateLoading = false;
+let pendingMoveSaveCount = 0;
 let gameStateAuthWarningShown = false;
 let gameChatAuthWarningShown = false;
 let gameStateNetworkWarningShown = false;
@@ -40,6 +41,16 @@ let gameChatNetworkWarningShown = false;
 
 const DRAG_PIECE_SCALE = 1.7;
 const GAME_STATE_POLL_INTERVAL_MS = 1000;
+const POLLING_LOG_PREFIX = '[gchess polling]';
+
+function pollingLog(message, details = {}) {
+    console.log(POLLING_LOG_PREFIX, message, details);
+}
+
+function lastKnownMoveId() {
+    const knownMove = SAVED_MOVES.length > 0 ? SAVED_MOVES[SAVED_MOVES.length - 1] : null;
+    return knownMove && knownMove.id ? knownMove.id : null;
+}
 
 //Funcçao para redireccionar usuario que nao está logueado
 function shouldStopPollingForAuth(response) {
@@ -1405,6 +1416,14 @@ if (clockIsEnabled()) {
 }
 
 if (isMultiplayerMode() && !gameStatePollingId) {
+    pollingLog('polling iniciado', {
+        gameId: typeof GAME_ID !== 'undefined' ? GAME_ID : null,
+        intervalMs: GAME_STATE_POLL_INTERVAL_MS,
+        moveCount: SAVED_MOVES.length,
+        lastMoveId: lastKnownMoveId(),
+        currentTurn: currentTurn,
+        playerColor: playerColor(),
+    });
     syncMovesFromServer();
     gameStatePollingId = setInterval(syncMovesFromServer, GAME_STATE_POLL_INTERVAL_MS);
     window.gchessGameStatePollingId = gameStatePollingId;
@@ -2417,6 +2436,7 @@ function saveMoveToDatabase(moveData, gameState = {}) {
         winner: gameState.winner,
         result: gameState.result,
     };
+    pendingMoveSaveCount += 1;
 
     fetch(`/games/${GAME_ID}/save-move/`, {
         method: 'POST',
@@ -2436,12 +2456,27 @@ function saveMoveToDatabase(moveData, gameState = {}) {
     })
     .then(data => {
         console.log('Movimento salvo:', data);
+        if (data.move_id) {
+            const savedMove = SAVED_MOVES.find(move =>
+                !move.id &&
+                move.move_number === moveData.move_number &&
+                move.from === moveData.from &&
+                move.to === moveData.to
+            );
+
+            if (savedMove) {
+                savedMove.id = data.move_id;
+            }
+        }
         applyClockState(data.clock);
         applyDrawOfferState(data.draw_offer);
         showServerGameResult(data);
     })
     .catch(error => {
         console.error('Erro ao salvar movimento:', error);
+    })
+    .finally(() => {
+        pendingMoveSaveCount = Math.max(0, pendingMoveSaveCount - 1);
     });
 }
 
@@ -2592,6 +2627,7 @@ function loadPositionUntil(index) {
 function movesAreEqual(firstMove, secondMove) {
     return firstMove &&
         secondMove &&
+        (!firstMove.id || !secondMove.id || firstMove.id === secondMove.id) &&
         firstMove.move_number === secondMove.move_number &&
         firstMove.from === secondMove.from &&
         firstMove.to === secondMove.to &&
@@ -2612,6 +2648,13 @@ async function syncMovesFromServer() {
     }
 
     gameStateLoading = true;
+    pollingLog('request state', {
+        gameId: GAME_ID,
+        moveCount: SAVED_MOVES.length,
+        lastMoveId: lastKnownMoveId(),
+        currentTurn: currentTurn,
+        pendingMoveSaveCount: pendingMoveSaveCount,
+    });
 
     try {
         const response = await fetch(`/games/${GAME_ID}/state/?_=${Date.now()}`, {
@@ -2639,6 +2682,14 @@ async function syncMovesFromServer() {
         multiplayerSyncFailures = 0;
         gameStateNetworkWarningShown = false;
         const data = await response.json();
+        pollingLog('respuesta endpoint', {
+            gameId: data.game_id,
+            moveCount: data.move_count,
+            lastMoveId: data.last_move_id,
+            turn: data.turn,
+            fen: data.fen,
+            version: data.version,
+        });
         applyClockState(data.clock);
         applyDrawOfferState(data.draw_offer);
         showServerGameResult(data);
@@ -2653,6 +2704,15 @@ async function syncMovesFromServer() {
 
         const serverMoves = data.moves || [];
         const oldMoveCount = SAVED_MOVES.length;
+        if (pendingMoveSaveCount > 0 && serverMoves.length < oldMoveCount) {
+            pollingLog('respuesta anterior ignorada mientras se guarda jugada local', {
+                serverMoveCount: serverMoves.length,
+                localMoveCount: oldMoveCount,
+                pendingMoveSaveCount: pendingMoveSaveCount,
+            });
+            return;
+        }
+
         const wasViewingLatestPosition = isViewingLatestPosition();
         const hasDifferentMoves = serverMoves.length !== SAVED_MOVES.length ||
             serverMoves.some((move, index) => !movesAreEqual(move, SAVED_MOVES[index]));
@@ -2660,6 +2720,13 @@ async function syncMovesFromServer() {
         if (!hasDifferentMoves) {
             return;
         }
+
+        pollingLog('movimiento nuevo detectado', {
+            oldMoveCount: oldMoveCount,
+            serverMoveCount: serverMoves.length,
+            oldLastMoveId: lastKnownMoveId(),
+            serverLastMoveId: data.last_move_id,
+        });
 
         const hasOnlyAppendedMoves = serverMoves.length > oldMoveCount &&
             SAVED_MOVES.every((move, index) => movesAreEqual(move, serverMoves[index]));
@@ -2672,6 +2739,13 @@ async function syncMovesFromServer() {
         } else {
             loadPositionUntil(SAVED_MOVES.length);
         }
+
+        pollingLog('tablero actualizado', {
+            moveCount: SAVED_MOVES.length,
+            lastMoveId: lastKnownMoveId(),
+            currentTurn: currentTurn,
+            historyIndex: historyIndex,
+        });
 
         if (serverMoves.length > oldMoveCount) {
             playMoveSound();

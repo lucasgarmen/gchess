@@ -485,6 +485,7 @@ def board_from_game_moves(game):
 def serialize_moves(game):
     return [
         {
+            'id': move.id,
             'move_number': move.move_number,
             'from': move.from_square,
             'to': move.to_square,
@@ -510,6 +511,7 @@ def serialize_game_state(game, user):
         'moves': moves,
         'move_count': len(moves),
         'last_move': last_move,
+        'last_move_id': last_saved_move.id if last_saved_move else None,
         'status': game.status,
         'result': game.result if game.result in ('white', 'black', 'draw') else None,
         'game_finished': game.status == 'finished',
@@ -1178,8 +1180,19 @@ def game_state(request, game_id):
     touch_presence(request.user)
     game = get_game_for_user(game_id, request.user)
     finish_clock_if_expired(game)
+    state = serialize_game_state(game, request.user)
 
-    response = JsonResponse(serialize_game_state(game, request.user))
+    logger.info(
+        "[polling] game_state game_id=%s user_id=%s move_count=%s last_move_id=%s turn=%s fen=%s",
+        state['game_id'],
+        request.user.id,
+        state['move_count'],
+        state['last_move_id'],
+        state['turn'],
+        state['fen'],
+    )
+
+    response = JsonResponse(state)
     response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response['Pragma'] = 'no-cache'
     return response
