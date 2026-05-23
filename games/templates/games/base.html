@@ -8,15 +8,15 @@
 
     <title>{% block title %}GChess{% endblock %}</title>
 
-    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=28">
+    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=29">
 </head>
 
 <body>
 
     <nav>
-    <a class="nav-brand" href="{% url 'home' %}" aria-label="GChess">
+    <span class="nav-brand" aria-label="GChess">
         <img src="{% static 'games/gchess-logo.png' %}" alt="GChess">
-    </a>
+    </span>
     <a href="{% url 'home' %}">{% tr "nav_home" %}</a>
     <a href="{% url 'games_list' %}">{% tr "nav_games" %}</a>
     <a href="{% url 'game_create' %}">{% tr "nav_new_game" %}</a>

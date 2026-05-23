@@ -766,8 +766,8 @@ function selectSquare(square) {
     selectedSquare = square;
     square.classList.add('selected');
 
-    const moves = getLegalMoves(square);
-    highlightMoves(moves);
+    const moves = canQueueMoveFrom(square) ? getPremoveMoves(square) : getLegalMoves(square);
+    highlightMoves(moves, { allowOwnPieces: canQueueMoveFrom(square) });
 }
 
 function clearQueuedMove() {
@@ -1123,7 +1123,6 @@ function startPieceDrag(square, event) {
     if (
         selectedSquare !== null &&
         selectedSquare !== square &&
-        !sameColor(selectedSquare, square) &&
         isPossibleMove(square)
     ) {
         return;
@@ -1942,12 +1941,141 @@ function getPawnMoves(square) {
     return moves;
 }
 
+function getPremovePawnMoves(square) {
+    const moves = [];
+    const { col, row } = coordToPosition(square.dataset.coord);
+    const color = square.dataset.color;
+    const direction = color === 'white' ? 1 : -1;
+    const startRow = color === 'white' ? 2 : 7;
+    const frontCoord = positionToCoord(col, row + direction);
 
-function highlightMoves(coords) {
+    if (frontCoord) {
+        const frontSquare = getSquare(frontCoord);
+
+        if (frontSquare && frontSquare.dataset.color === '') {
+            moves.push(frontCoord);
+
+            const doubleFrontCoord = positionToCoord(col, row + direction * 2);
+
+            if (row === startRow && doubleFrontCoord) {
+                const doubleFrontSquare = getSquare(doubleFrontCoord);
+
+                if (doubleFrontSquare && doubleFrontSquare.dataset.color === '') {
+                    moves.push(doubleFrontCoord);
+                }
+            }
+        }
+    }
+
+    [
+        positionToCoord(col - 1, row + direction),
+        positionToCoord(col + 1, row + direction),
+    ].forEach(coord => {
+        if (coord) {
+            moves.push(coord);
+        }
+    });
+
+    return moves;
+}
+
+function getPremoveSlidingMoves(square, directions) {
+    const moves = [];
+    const { col, row } = coordToPosition(square.dataset.coord);
+
+    directions.forEach(([dc, dr]) => {
+        let nextCol = col + dc;
+        let nextRow = row + dr;
+
+        while (true) {
+            const coord = positionToCoord(nextCol, nextRow);
+
+            if (coord === null) {
+                break;
+            }
+
+            const targetSquare = getSquare(coord);
+            moves.push(coord);
+
+            if (targetSquare.dataset.color !== '') {
+                break;
+            }
+
+            nextCol += dc;
+            nextRow += dr;
+        }
+    });
+
+    return moves;
+}
+
+function getPremoveMoves(square) {
+    const type = square.dataset.type;
+
+    if (type === 'pawn') {
+        return getPremovePawnMoves(square);
+    }
+
+    if (type === 'horse') {
+        return getHorseMoves(square);
+    }
+
+    if (type === 'bishop') {
+        return getPremoveSlidingMoves(square, [
+            [1, 1],
+            [1, -1],
+            [-1, -1],
+            [-1, 1],
+        ]);
+    }
+
+    if (type === 'rook') {
+        return getPremoveSlidingMoves(square, [
+            [0, 1],
+            [1, 0],
+            [0, -1],
+            [-1, 0],
+        ]);
+    }
+
+    if (type === 'queen') {
+        return getPremoveSlidingMoves(square, [
+            [0, 1],
+            [1, 1],
+            [1, 0],
+            [1, -1],
+            [0, -1],
+            [-1, -1],
+            [-1, 0],
+            [-1, 1],
+        ]);
+    }
+
+    if (type === 'king') {
+        const { col, row } = coordToPosition(square.dataset.coord);
+
+        return [
+            [0, 1],
+            [1, 1],
+            [1, 0],
+            [1, -1],
+            [0, -1],
+            [-1, -1],
+            [-1, 0],
+            [-1, 1],
+        ]
+            .map(([dc, dr]) => positionToCoord(col + dc, row + dr))
+            .filter(coord => coord !== null);
+    }
+
+    return [];
+}
+
+function highlightMoves(coords, options = {}) {
     coords.forEach(coord => {
         const square = document.querySelector(`[data-coord="${coord}"]`);
 
-        if (square && !sameColor(selectedSquare, square) && !isKingSquare(square)) {
+        if (square && (options.allowOwnPieces || !sameColor(selectedSquare, square)) && !isKingSquare(square)) {
             square.classList.add('possible-move');
         }
     });
