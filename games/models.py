@@ -44,7 +44,11 @@ class ChessGame(models.Model):
     draw_offer_by_color = models.CharField(max_length=10, blank=True)
 
     def __str__(self):
-        return self.title
+        white = self.white_player or 'Sin asignar'
+        black = self.black_player or 'Sin asignar'
+        created = self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else 'Sin fecha'
+
+        return f"Blancas: {white} vs Negras: {black} - Creada: {created}"
     
 class Move(models.Model):
     game = models.ForeignKey(ChessGame, on_delete=models.CASCADE, related_name='moves')
