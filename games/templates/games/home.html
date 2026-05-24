@@ -101,6 +101,12 @@
             <button id="last-move">{% tr "last_position" %}</button>
         </div>
 
+        <form id="analyze-game-form" class="game-actions" method="POST" action="{% url 'game_analyzer' %}">
+            {% csrf_token %}
+            <textarea id="analyze-game-pgn" name="pgn" hidden></textarea>
+            <button id="analyze-game-button" class="analyze-game-button" type="submit" hidden>{% tr "analyze_finished_game" %}</button>
+        </form>
+
         <ul id="move-list" style="display: none;"></ul>
         <pre id="pgn-box" class="pgn-box"></pre>
     </aside>
@@ -116,6 +122,6 @@
     let PLAYER_COLOR = 'white';
 </script>
 
-<script src="{% static 'games/board.js' %}?v=68"></script>
+<script src="{% static 'games/board.js' %}?v=69"></script>
 
 {% endblock %}

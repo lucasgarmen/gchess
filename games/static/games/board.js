@@ -137,6 +137,9 @@ const whiteClock = document.getElementById('white-clock');
 const blackClock = document.getElementById('black-clock');
 const offerDrawButton = document.getElementById('offer-draw-button');
 const resignButton = document.getElementById('resign-button');
+const analyzeGameButton = document.getElementById('analyze-game-button');
+const analyzeGameForm = document.getElementById('analyze-game-form');
+const analyzeGamePgn = document.getElementById('analyze-game-pgn');
 const resignConfirmPanel = document.getElementById('resign-confirm-panel');
 const confirmResignButton = document.getElementById('confirm-resign-button');
 const cancelResignButton = document.getElementById('cancel-resign-button');
@@ -670,11 +673,19 @@ function updateHistoryControls() {
 function showGameStatus(message) {
     gameStatus.innerText = message;
     gameStatus.hidden = false;
+
+    if (analyzeGameButton && gameOver) {
+        analyzeGameButton.hidden = false;
+    }
 }
 
 function hideGameStatus() {
     gameStatus.hidden = true;
     gameStatus.innerText = '';
+
+    if (analyzeGameButton) {
+        analyzeGameButton.hidden = true;
+    }
 }
 
 function initialPieceCounts() {
@@ -3232,6 +3243,7 @@ function undoComputerMove() {
     const movesToRemove = SAVED_MOVES.length % 2 === 0 ? 2 : 1;
     SAVED_MOVES.splice(Math.max(0, SAVED_MOVES.length - movesToRemove), movesToRemove);
     gameOver = false;
+    hideGameStatus();
     setCoachComment(coachEnabled ? uiText('coach_enabled', 'Treinador habilitado. Vou comentar suas jogadas.') : '');
     loadPositionUntil(SAVED_MOVES.length);
     renderSavedMoveList();
@@ -3255,6 +3267,7 @@ function resetComputerGame() {
     SAVED_MOVES.splice(0, SAVED_MOVES.length);
     gameOver = false;
     finishedGameSynced = false;
+    hideGameStatus();
     setCoachComment('');
     loadPositionUntil(0);
     renderSavedMoveList();
@@ -3717,6 +3730,19 @@ function submitTrainerChatQuestion() {
 
     input.value = '';
     askTrainerChat(question);
+}
+
+function savedMovesAsInternalPgn() {
+    return SAVED_MOVES.map(move => {
+        const promotion = move.promotion ? ` ${move.promotion}` : '';
+        return `${move.move_number}. ${move.from} -> ${move.to}${promotion}`;
+    }).join('\n');
+}
+
+if (analyzeGameForm && analyzeGamePgn) {
+    analyzeGameForm.addEventListener('submit', function () {
+        analyzeGamePgn.value = savedMovesAsInternalPgn();
+    });
 }
 
 if (trainerChatForm) {

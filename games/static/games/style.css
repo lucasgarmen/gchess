@@ -693,8 +693,21 @@ button {
 }
 
 .game-actions button,
+.game-actions .analyze-game-button,
 .draw-offer-actions button {
     flex: 1 1 auto;
+}
+
+.analyze-game-button {
+    align-items: center;
+    background: linear-gradient(180deg, #f7e6c8, var(--accent));
+    border-radius: 8px;
+    color: var(--text-dark);
+    display: inline-flex;
+    font-weight: 700;
+    justify-content: center;
+    padding: 9px 14px;
+    text-decoration: none;
 }
 
 .danger-button {

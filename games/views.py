@@ -2315,7 +2315,40 @@ def read_internal_coordinate_game(pgn_text):
     return game, None
 
 
-@login_required
+def pgn_result_for_game(game):
+    return {
+        'white': '1-0',
+        'black': '0-1',
+        'draw': '1/2-1/2',
+    }.get(game.result, '*')
+
+
+def build_pgn_from_saved_game(game):
+    board = chess.Board()
+    pgn_game = chess.pgn.Game()
+    pgn_game.headers['Event'] = 'GChess'
+    pgn_game.headers['Site'] = 'GChess'
+    pgn_game.headers['Date'] = timezone.localtime(game.created_at).strftime('%Y.%m.%d') if game.created_at else '????.??.??'
+    pgn_game.headers['Round'] = '-'
+    pgn_game.headers['White'] = game.white_player or 'White'
+    pgn_game.headers['Black'] = game.black_player or 'Black'
+    pgn_game.headers['Result'] = pgn_result_for_game(game)
+
+    node = pgn_game
+
+    for saved_move in game.moves.all().order_by('move_number', 'id'):
+        move = build_chess_move(saved_move)
+
+        if move not in board.legal_moves:
+            raise ValueError(f'A jogada salva {saved_move.from_square}{saved_move.to_square} e ilegal para a posicao.')
+
+        node = node.add_variation(move)
+        board.push(move)
+
+    exporter = chess.pgn.StringExporter(headers=True, variations=False, comments=False)
+    return pgn_game.accept(exporter)
+
+
 @rate_limit(12, 60, 'game-analyzer')
 def game_analyzer(request):
     language = current_language(request)
@@ -2325,9 +2358,26 @@ def game_analyzer(request):
     error_message = ""
     opening_name = ""
 
+    source_game_id = request.GET.get('game_id')
+    should_analyze = False
+
+    if source_game_id:
+        source_game = get_game_for_user(source_game_id, request.user, request.session.get('guest_id'))
+
+        if source_game.status != 'finished':
+            error_message = t(language, 'analyze_requires_finished')
+        else:
+            try:
+                pgn_text = build_pgn_from_saved_game(source_game)
+                should_analyze = True
+            except ValueError as exc:
+                error_message = f"Nao foi possivel gerar o PGN da partida: {exc}"
+
     if request.method == "POST":
         pgn_text = request.POST.get("pgn", "").strip()
+        should_analyze = True
 
+    if should_analyze:
         game, parse_error = read_analyzer_game(pgn_text) if pgn_text and len(pgn_text.encode('utf-8')) <= MAX_PGN_BYTES else (None, None)
         stockfish_path, stockfish_error = configured_stockfish_path()
 

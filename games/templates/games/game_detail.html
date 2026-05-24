@@ -77,6 +77,7 @@
         </div>
 
         <div class="game-actions">
+            <a id="analyze-game-button" class="analyze-game-button" href="{% url 'game_analyzer' %}?game_id={{ game.id }}" {% if game.status != 'finished' %}hidden{% endif %}>{% tr "analyze_finished_game" %}</a>
             <button id="offer-draw-button" type="button">{% tr "offer_draw" %}</button>
             <button id="resign-button" class="danger-button" type="button">{% tr "resign" %}</button>
         </div>
@@ -168,6 +169,6 @@
     const MOVE_SOUND_URL = "{% static 'games/sounds/piece.mp3' %}";
 </script>
 
-<script src="{% static 'games/board.js' %}?v=68"></script>
+<script src="{% static 'games/board.js' %}?v=69"></script>
 
 {% endblock %}

@@ -8,7 +8,7 @@ from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 
 from .models import ChessGame, GameInvitation, Move
-from .views import evaluate_board_outcome, read_analyzer_game, read_internal_coordinate_game
+from .views import build_pgn_from_saved_game, evaluate_board_outcome, read_analyzer_game, read_internal_coordinate_game
 
 
 class AnalyzerPgnParsingTests(SimpleTestCase):
@@ -40,6 +40,32 @@ class AnalyzerPgnParsingTests(SimpleTestCase):
             board.push(move)
 
         self.assertEqual(san_moves, ["e4", "f5", "exf5", "e6", "f6"])
+
+
+class SavedGamePgnTests(TestCase):
+    def test_builds_standard_pgn_from_saved_finished_game(self):
+        white = User.objects.create_user(username="white-pgn", password="pass")
+        black = User.objects.create_user(username="black-pgn", password="pass")
+        game = ChessGame.objects.create(
+            owner=white,
+            white_user=white,
+            black_user=black,
+            white_player=white.username,
+            black_player=black.username,
+            status="finished",
+            result="white",
+        )
+        Move.objects.create(game=game, move_number=1, from_square="e2", to_square="e4", piece_type="pawn", piece_color="white")
+        Move.objects.create(game=game, move_number=2, from_square="e7", to_square="e5", piece_type="pawn", piece_color="black")
+
+        pgn_text = build_pgn_from_saved_game(game)
+        parsed_game, error = read_analyzer_game(pgn_text)
+
+        self.assertIsNone(error)
+        self.assertIn('[White "white-pgn"]', pgn_text)
+        self.assertIn('[Black "black-pgn"]', pgn_text)
+        self.assertIn('[Result "1-0"]', pgn_text)
+        self.assertEqual([move.uci() for move in parsed_game.mainline_moves()], ["e2e4", "e7e5"])
 
 
 class DrawOutcomeTests(SimpleTestCase):
