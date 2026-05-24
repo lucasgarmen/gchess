@@ -10,6 +10,16 @@ ONLINE_SECONDS = 60
 
 
 class ChessGameForm(forms.Form):
+    game_type = forms.ChoiceField(
+        label='Tipo de partida',
+        choices=[
+            ('casual', 'Casual'),
+            ('ranked', 'Ranqueada'),
+        ],
+        initial='casual',
+        required=False,
+        widget=forms.RadioSelect,
+    )
     opponent_mode = forms.ChoiceField(
         label='Oponente',
         choices=[
@@ -50,13 +60,24 @@ class ChessGameForm(forms.Form):
         }),
     )
 
-    def __init__(self, *args, language='pt', **kwargs):
+    def __init__(self, *args, language='pt', user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['opponent_mode'].choices = [
-            ('random', t(language, 'random_opponent')),
-            ('choose', t(language, 'choose_opponent')),
-            ('link', t(language, 'send_link')),
+        self.user = user
+        self.fields['game_type'].choices = [
+            ('casual', t(language, 'casual_game')),
+            ('ranked', t(language, 'ranked_game')),
         ]
+        if not user or not user.is_authenticated:
+            self.fields['game_type'].choices = [('casual', t(language, 'casual_game'))]
+            self.fields['game_type'].initial = 'casual'
+            self.fields['opponent_mode'].choices = [('link', t(language, 'send_link'))]
+            self.fields['opponent_mode'].initial = 'link'
+        else:
+            self.fields['opponent_mode'].choices = [
+                ('random', t(language, 'random_opponent')),
+                ('choose', t(language, 'choose_opponent')),
+                ('link', t(language, 'send_link')),
+            ]
         self.fields['color_choice'].choices = [
             ('white', t(language, 'white')),
             ('black', t(language, 'black')),
@@ -68,6 +89,12 @@ class ChessGameForm(forms.Form):
 
     def clean(self):
         cleaned_data = super().clean()
+        if not cleaned_data.get('game_type'):
+            cleaned_data['game_type'] = 'casual'
+
+        if not self.user or not self.user.is_authenticated:
+            cleaned_data['game_type'] = 'casual'
+            cleaned_data['opponent_mode'] = 'link'
 
         if cleaned_data.get('opponent_mode') == 'choose' and not cleaned_data.get('opponent_name'):
             self.add_error('opponent_name', 'Informe o nome do oponente.')

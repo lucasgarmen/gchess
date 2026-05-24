@@ -15,6 +15,7 @@ import chess
 import random
 import re
 import shutil
+import uuid
 from io import StringIO
 from pathlib import Path
 from django.http import JsonResponse
@@ -95,6 +96,26 @@ def validate_moves_payload(moves):
     return moves
 
 
+def guest_id_for_request(request):
+    guest_id = request.session.get('guest_id')
+
+    if not guest_id:
+        guest_id = uuid.uuid4().hex
+        request.session['guest_id'] = guest_id
+
+    return guest_id
+
+
+def guest_name_for_request(request):
+    guest_name = request.session.get('guest_name')
+
+    if not guest_name:
+        guest_name = f"Invitado{random.randint(100, 999)}"
+        request.session['guest_name'] = guest_name
+
+    return guest_name
+
+
 @require_POST
 def set_language(request):
     request.session['language'] = normalize_language(request.POST.get('language'))
@@ -133,6 +154,7 @@ def expected_elo_score(player_elo, opponent_elo):
 def apply_rating_after_game(game):
     if (
         game.rating_applied or
+        not game.is_rated or
         game.status != 'finished' or
         game.result not in ('white', 'black', 'draw') or
         not game.white_user_id or
@@ -165,23 +187,37 @@ def apply_rating_after_game(game):
     game.save(update_fields=['rating_applied'])
 
 
-def game_access_filter(user):
-    return Q(owner=user) | Q(white_user=user) | Q(black_user=user)
+def game_access_filter(user, guest_id=None):
+    query = Q(pk__in=[])
+
+    if user.is_authenticated:
+        query |= Q(owner=user) | Q(white_user=user) | Q(black_user=user)
+
+    if guest_id:
+        query |= Q(white_guest_id=guest_id) | Q(black_guest_id=guest_id)
+
+    return query
 
 
-def get_game_for_user(game_id, user):
+def get_game_for_user(game_id, user, guest_id=None):
     return get_object_or_404(
         ChessGame,
-        game_access_filter(user),
+        game_access_filter(user, guest_id),
         id=game_id,
     )
 
 
-def player_color_for_game(game, user):
-    if game.white_user_id == user.id:
+def player_color_for_game(game, user, guest_id=None):
+    if user.is_authenticated and game.white_user_id == user.id:
         return 'white'
 
-    if game.black_user_id == user.id:
+    if user.is_authenticated and game.black_user_id == user.id:
+        return 'black'
+
+    if guest_id and game.white_guest_id == guest_id:
+        return 'white'
+
+    if guest_id and game.black_guest_id == guest_id:
         return 'black'
 
     return None
@@ -194,23 +230,44 @@ def resolve_creator_color(color_choice):
     return color_choice
 
 
-def create_game_from_invitation(invitation, opponent):
+def invitation_creator_name(invitation):
+    if invitation.creator_id:
+        return invitation.creator.username
+
+    return invitation.creator_guest_name or 'Invitado'
+
+
+def create_game_from_invitation(invitation, opponent=None, opponent_guest_id='', opponent_guest_name=''):
     creator_color = resolve_creator_color(invitation.creator_color)
     clock_settings = build_initial_clock_settings(invitation.time_control_minutes)
+    creator_name = invitation_creator_name(invitation)
+    opponent_name = opponent.username if opponent else (opponent_guest_name or 'Invitado')
 
     if creator_color == 'white':
         white_user = invitation.creator
         black_user = opponent
+        white_guest_id = invitation.creator_guest_id if not invitation.creator_id else ''
+        black_guest_id = opponent_guest_id if not opponent else ''
+        white_player = creator_name
+        black_player = opponent_name
     else:
         white_user = opponent
         black_user = invitation.creator
+        white_guest_id = opponent_guest_id if not opponent else ''
+        black_guest_id = invitation.creator_guest_id if not invitation.creator_id else ''
+        white_player = opponent_name
+        black_player = creator_name
 
     return ChessGame.objects.create(
         owner=invitation.creator,
         white_user=white_user,
         black_user=black_user,
-        white_player=white_user.username,
-        black_player=black_user.username,
+        white_guest_id=white_guest_id,
+        black_guest_id=black_guest_id,
+        white_player=white_player,
+        black_player=black_player,
+        category='ranked' if invitation.is_rated else 'casual',
+        is_rated=invitation.is_rated,
         time_control_minutes=invitation.time_control_minutes,
         **clock_settings,
     )
@@ -264,8 +321,8 @@ def serialize_clock(game):
     }
 
 
-def serialize_draw_offer(game, user):
-    player_color = player_color_for_game(game, user)
+def serialize_draw_offer(game, user, guest_id=None):
+    player_color = player_color_for_game(game, user, guest_id)
 
     if not game.draw_offer_by_color or game.status == 'finished':
         return {
@@ -372,18 +429,19 @@ LOW_ELO_WEAKNESS = {
     },
 }
 
-@login_required
 @ensure_csrf_cookie
 def home(request):
     touch_presence(request.user)
     return render(request, 'games/home.html')
 
 
-@login_required
 def games_list(request):
     touch_presence(request.user)
+    if not request.user.is_authenticated and not request.session.get('guest_id'):
+        return redirect('game_create')
+
     games = ChessGame.objects.filter(
-        game_access_filter(request.user)
+        game_access_filter(request.user, request.session.get('guest_id'))
     ).prefetch_related('moves').order_by('-created_at')
 
     game_cards = []
@@ -509,7 +567,7 @@ def serialize_moves(game):
     ]
 
 
-def serialize_game_state(game, user):
+def serialize_game_state(game, user, guest_id=None):
     board, board_error = board_from_game_moves(game)
     moves = serialize_moves(game)
     last_move = moves[-1] if moves else None
@@ -532,7 +590,7 @@ def serialize_game_state(game, user):
         'changed_at': state_changed_at.isoformat() if state_changed_at else None,
         'board_error': board_error,
         'clock': serialize_clock(game),
-        'draw_offer': serialize_draw_offer(game, user),
+        'draw_offer': serialize_draw_offer(game, user, guest_id),
     }
 
 
@@ -597,32 +655,36 @@ def get_user_color_for_game(game, user):
 
     return None
 
-@login_required
 def game_detail(request, game_id):
     touch_presence(request.user)
-    game = get_game_for_user(game_id, request.user)
+    guest_id = request.session.get('guest_id')
+    game = get_game_for_user(game_id, request.user, guest_id)
     apply_clock_elapsed(game)
-    player_color = player_color_for_game(game, request.user)
+    player_color = player_color_for_game(game, request.user, guest_id)
     moves = serialize_moves(game)
 
     return render(request, 'games/game_detail.html', {
         'game': game,
         'moves': moves,
         'player_color': player_color,
-        'multiplayer_mode': bool(game.white_user_id and game.black_user_id),
+        'multiplayer_mode': bool((game.white_user_id or game.white_guest_id) and (game.black_user_id or game.black_guest_id)),
         'clock': serialize_clock(game),
-        'draw_offer': serialize_draw_offer(game, request.user),
+        'draw_offer': serialize_draw_offer(game, request.user, guest_id),
     })
 
-@login_required   
 def game_create(request):
     touch_presence(request.user)
     if request.method == 'POST':
-        form = ChessGameForm(request.POST, language=current_language(request))
+        form = ChessGameForm(request.POST, language=current_language(request), user=request.user)
 
         if form.is_valid():
             opponent_mode = form.cleaned_data['opponent_mode']
             opponent = form.get_opponent_user()
+            is_rated = form.cleaned_data.get('game_type') == 'ranked'
+
+            if is_rated and not request.user.is_authenticated:
+                form.add_error('game_type', t(current_language(request), 'ranked_login_required'))
+                opponent_mode = None
 
             if opponent_mode == 'choose':
                 if not opponent:
@@ -635,14 +697,18 @@ def game_create(request):
                         opponent=opponent,
                         opponent_mode='direct',
                         creator_color=form.cleaned_data['color_choice'],
+                        is_rated=is_rated,
                         time_control_minutes=form.cleaned_data['time_control_minutes'],
                     )
                     return redirect('game_invitation_wait', invitation_id=invitation.id)
             elif opponent_mode == 'link':
                 invitation = GameInvitation.objects.create(
-                    creator=request.user,
+                    creator=request.user if request.user.is_authenticated else None,
+                    creator_guest_id='' if request.user.is_authenticated else guest_id_for_request(request),
+                    creator_guest_name='' if request.user.is_authenticated else guest_name_for_request(request),
                     opponent_mode='link',
                     creator_color=form.cleaned_data['color_choice'],
+                    is_rated=is_rated,
                     time_control_minutes=form.cleaned_data['time_control_minutes'],
                 )
                 return redirect('game_invitation_wait', invitation_id=invitation.id)
@@ -651,17 +717,17 @@ def game_create(request):
                     creator=request.user,
                     opponent_mode='random',
                     creator_color=form.cleaned_data['color_choice'],
+                    is_rated=is_rated,
                     time_control_minutes=form.cleaned_data['time_control_minutes'],
                 )
                 return redirect('game_invitation_wait', invitation_id=invitation.id)
     else:
-        form = ChessGameForm(language=current_language(request))
+        form = ChessGameForm(language=current_language(request), user=request.user)
 
     return render(request, 'games/game_create.html', {
         'form': form
     })
     
-@login_required
 @require_POST
 @rate_limit(60, 60, 'save-move')
 def save_move(request, game_id):
@@ -672,7 +738,7 @@ def save_move(request, game_id):
         return JsonResponse({'error': str(exc)}, status=400)
 
     try:
-        result = save_move_for_user(game_id, request.user, data)
+        result = save_move_for_user(game_id, request.user, data, request.session.get('guest_id'))
     except GameActionError as exc:
         return JsonResponse(exc.payload, status=exc.status)
 
@@ -680,10 +746,10 @@ def save_move(request, game_id):
 
 
 @transaction.atomic
-def save_move_for_user(game_id, user, data):
+def save_move_for_user(game_id, user, data, guest_id=None):
     game = get_object_or_404(
         ChessGame.objects.select_for_update(),
-        game_access_filter(user),
+        game_access_filter(user, guest_id),
         id=game_id,
     )
     timeout_winner = apply_clock_elapsed(game)
@@ -697,7 +763,7 @@ def save_move_for_user(game_id, user, data):
             'winner': timeout_winner,
         }, status=409)
 
-    player_color = player_color_for_game(game, user)
+    player_color = player_color_for_game(game, user, guest_id)
     expected_color = 'white' if game.moves.count() % 2 == 0 else 'black'
 
     if game.status == 'finished':
@@ -789,7 +855,7 @@ def save_move_for_user(game_id, user, data):
     logger.info(
         "Move saved for game %s by user %s: %s%s.",
         game.id,
-        user.id,
+        user.id if user.is_authenticated else f'guest:{guest_id}',
         move.from_square,
         move.to_square,
     )
@@ -802,17 +868,17 @@ def save_move_for_user(game_id, user, data):
         'winner': game.result if game.result in ('white', 'black') else None,
         'result': game.result if game.result in ('white', 'black', 'draw') else None,
         'draw_reason': outcome.get('reason'),
-        'draw_offer': serialize_draw_offer(game, user),
-        'state': serialize_game_state(game, user),
+        'draw_offer': serialize_draw_offer(game, user, guest_id),
+        'state': serialize_game_state(game, user, guest_id),
     }
 
 
-@login_required
 @require_POST
 @rate_limit(20, 60, 'mark-finished')
 def mark_finished(request, game_id):
     touch_presence(request.user)
-    game = get_game_for_user(game_id, request.user)
+    guest_id = request.session.get('guest_id')
+    game = get_game_for_user(game_id, request.user, guest_id)
 
     try:
         data = parse_json_body(request)
@@ -865,17 +931,17 @@ def mark_finished(request, game_id):
         'result': game.result,
         'game_finished': game.status == 'finished',
         'winner': game.result if game.result in ('white', 'black') else None,
-        'draw_offer': serialize_draw_offer(game, request.user),
+        'draw_offer': serialize_draw_offer(game, request.user, guest_id),
     })
 
 
-@login_required
 @require_POST
 @rate_limit(20, 60, 'offer-draw')
 def offer_draw(request, game_id):
     touch_presence(request.user)
-    game = get_game_for_user(game_id, request.user)
-    player_color = player_color_for_game(game, request.user)
+    guest_id = request.session.get('guest_id')
+    game = get_game_for_user(game_id, request.user, guest_id)
+    player_color = player_color_for_game(game, request.user, guest_id)
 
     if game.status == 'finished':
         return JsonResponse({'error': 'A partida ja terminou.'}, status=409)
@@ -889,7 +955,7 @@ def offer_draw(request, game_id):
             'status': 'accepted',
             'game_finished': True,
             'result': 'draw',
-            'draw_offer': serialize_draw_offer(game, request.user),
+            'draw_offer': serialize_draw_offer(game, request.user, guest_id),
             'clock': serialize_clock(game),
         })
 
@@ -898,17 +964,17 @@ def offer_draw(request, game_id):
 
     return JsonResponse({
         'status': 'offered',
-        'draw_offer': serialize_draw_offer(game, request.user),
+        'draw_offer': serialize_draw_offer(game, request.user, guest_id),
     })
 
 
-@login_required
 @require_POST
 @rate_limit(20, 60, 'answer-draw')
 def answer_draw_offer(request, game_id):
     touch_presence(request.user)
-    game = get_game_for_user(game_id, request.user)
-    player_color = player_color_for_game(game, request.user)
+    guest_id = request.session.get('guest_id')
+    game = get_game_for_user(game_id, request.user, guest_id)
+    player_color = player_color_for_game(game, request.user, guest_id)
     try:
         data = parse_json_body(request)
     except ValueError as exc:
@@ -933,7 +999,7 @@ def answer_draw_offer(request, game_id):
             'status': 'accepted',
             'game_finished': True,
             'result': 'draw',
-            'draw_offer': serialize_draw_offer(game, request.user),
+            'draw_offer': serialize_draw_offer(game, request.user, guest_id),
             'clock': serialize_clock(game),
         })
 
@@ -942,17 +1008,17 @@ def answer_draw_offer(request, game_id):
 
     return JsonResponse({
         'status': 'rejected',
-        'draw_offer': serialize_draw_offer(game, request.user),
+        'draw_offer': serialize_draw_offer(game, request.user, guest_id),
     })
 
 
-@login_required
 @require_POST
 @rate_limit(10, 60, 'resign')
 def resign_game(request, game_id):
     touch_presence(request.user)
-    game = get_game_for_user(game_id, request.user)
-    player_color = player_color_for_game(game, request.user)
+    guest_id = request.session.get('guest_id')
+    game = get_game_for_user(game_id, request.user, guest_id)
+    player_color = player_color_for_game(game, request.user, guest_id)
 
     if game.status == 'finished':
         return JsonResponse({'error': 'A partida ja terminou.'}, status=409)
@@ -968,15 +1034,18 @@ def resign_game(request, game_id):
         'game_finished': True,
         'winner': winner,
         'result': winner,
-        'draw_offer': serialize_draw_offer(game, request.user),
+        'draw_offer': serialize_draw_offer(game, request.user, guest_id),
         'clock': serialize_clock(game),
     })
 
 
-@login_required
 def game_invitation_wait(request, invitation_id):
     touch_presence(request.user)
-    invitation = get_object_or_404(GameInvitation, id=invitation_id, creator=request.user)
+    invitation = get_object_or_404(
+        GameInvitation,
+        Q(creator=request.user) if request.user.is_authenticated else Q(creator_guest_id=request.session.get('guest_id', '')),
+        id=invitation_id,
+    )
     invitation_accept_url = request.build_absolute_uri(
         reverse('accept_invitation_link', args=[invitation.token])
     )
@@ -987,10 +1056,13 @@ def game_invitation_wait(request, invitation_id):
     })
 
 
-@login_required
 def invitation_status(request, invitation_id):
     touch_presence(request.user)
-    invitation = get_object_or_404(GameInvitation, id=invitation_id, creator=request.user)
+    invitation = get_object_or_404(
+        GameInvitation,
+        Q(creator=request.user) if request.user.is_authenticated else Q(creator_guest_id=request.session.get('guest_id', '')),
+        id=invitation_id,
+    )
 
     response = JsonResponse({
         'status': invitation.status,
@@ -1001,12 +1073,15 @@ def invitation_status(request, invitation_id):
     return response
 
 
-@login_required
 @require_POST
 @rate_limit(20, 60, 'cancel-invitation')
 def cancel_invitation(request, invitation_id):
     touch_presence(request.user)
-    invitation = get_object_or_404(GameInvitation, id=invitation_id, creator=request.user)
+    invitation = get_object_or_404(
+        GameInvitation,
+        Q(creator=request.user) if request.user.is_authenticated else Q(creator_guest_id=request.session.get('guest_id', '')),
+        id=invitation_id,
+    )
 
     updated_count = GameInvitation.objects.filter(
         id=invitation.id,
@@ -1113,26 +1188,30 @@ def accept_invitation(request, invitation_id):
     })
 
 
-@login_required
 @rate_limit(20, 60, 'accept-link')
 def accept_invitation_link(request, token):
     touch_presence(request.user)
+    guest_id = '' if request.user.is_authenticated else guest_id_for_request(request)
+    guest_name = '' if request.user.is_authenticated else guest_name_for_request(request)
 
     with transaction.atomic():
         invitation = get_object_or_404(GameInvitation, token=token, opponent_mode='link')
 
-        if invitation.creator_id == request.user.id:
+        if request.user.is_authenticated and invitation.creator_id == request.user.id:
+            return redirect('game_invitation_wait', invitation_id=invitation.id)
+        if not request.user.is_authenticated and invitation.creator_guest_id == guest_id:
             return redirect('game_invitation_wait', invitation_id=invitation.id)
 
         if invitation.status != 'pending':
-            if invitation.game_id and (
-                invitation.opponent_id == request.user.id or invitation.creator_id == request.user.id
-            ):
+            if invitation.game_id and ChessGame.objects.filter(game_access_filter(request.user, guest_id), id=invitation.game_id).exists():
                 return redirect('game_detail', game_id=invitation.game_id)
 
             return redirect('games_list')
 
-        if invitation.opponent_id and invitation.opponent_id != request.user.id:
+        if invitation.is_rated and not request.user.is_authenticated:
+            return redirect('login')
+
+        if invitation.opponent_id and (not request.user.is_authenticated or invitation.opponent_id != request.user.id):
             return redirect('games_list')
 
         accepted_count = GameInvitation.objects.filter(
@@ -1140,10 +1219,8 @@ def accept_invitation_link(request, token):
             status='pending',
             opponent_mode='link',
             opponent__isnull=True,
-        ).exclude(
-            creator=request.user
         ).update(
-            opponent=request.user,
+            opponent=request.user if request.user.is_authenticated else None,
             status='accepted',
             responded_at=timezone.now(),
         )
@@ -1152,7 +1229,12 @@ def accept_invitation_link(request, token):
             return redirect('games_list')
 
         invitation = GameInvitation.objects.select_related('creator', 'opponent').get(id=invitation.id)
-        game = create_game_from_invitation(invitation, request.user)
+        game = create_game_from_invitation(
+            invitation,
+            request.user if request.user.is_authenticated else None,
+            guest_id,
+            guest_name,
+        )
         invitation.game = game
         invitation.save(update_fields=['game'])
 
@@ -1180,11 +1262,11 @@ def reject_invitation(request, invitation_id):
     return JsonResponse({'status': 'rejected'})
 
 
-@login_required
 @rate_limit(120, 60, 'game-moves')
 def game_moves(request, game_id):
     touch_presence(request.user)
-    game = get_game_for_user(game_id, request.user)
+    guest_id = request.session.get('guest_id')
+    game = get_game_for_user(game_id, request.user, guest_id)
     finish_clock_if_expired(game)
 
     return JsonResponse({
@@ -1193,17 +1275,17 @@ def game_moves(request, game_id):
         'game_finished': game.status == 'finished',
         'winner': game.result if game.result in ('white', 'black') else None,
         'result': game.result if game.result in ('white', 'black', 'draw') else None,
-        'draw_offer': serialize_draw_offer(game, request.user),
+        'draw_offer': serialize_draw_offer(game, request.user, guest_id),
     })
 
 
-@login_required
 @rate_limit(120, 60, 'game-state')
 def game_state(request, game_id):
     touch_presence(request.user)
-    game = get_game_for_user(game_id, request.user)
+    guest_id = request.session.get('guest_id')
+    game = get_game_for_user(game_id, request.user, guest_id)
     finish_clock_if_expired(game)
-    state = serialize_game_state(game, request.user)
+    state = serialize_game_state(game, request.user, guest_id)
 
     logger.info(
         "[polling] game_state game_id=%s user_id=%s move_count=%s last_move_id=%s turn=%s fen=%s",
@@ -1221,34 +1303,43 @@ def game_state(request, game_id):
     return response
 
 
-@login_required
 @require_http_methods(["GET", "POST"])
 @rate_limit(120, 60, 'game-chat')
 def game_chat(request, game_id):
     touch_presence(request.user)
+    guest_id = request.session.get('guest_id')
     try:
         if request.method == 'POST':
             data = parse_json_body(request)
-            save_chat_message_for_user(game_id, request.user, data.get('text'))
+            guest_name = guest_name_for_request(request) if not request.user.is_authenticated else ''
+            save_chat_message_for_user(game_id, request.user, data.get('text'), guest_id, guest_name)
     except ValueError as exc:
         return JsonResponse({'error': str(exc)}, status=400)
     except GameActionError as exc:
         return JsonResponse(exc.payload, status=exc.status)
 
     try:
-        return JsonResponse(serialize_game_chat_for_user(
+        mark_read = request.GET.get('mark_read') == '1'
+        session_key = f'game_chat_read_{game_id}'
+        payload = serialize_game_chat_for_user(
             game_id,
             request.user,
-            mark_read=request.GET.get('mark_read') == '1',
-        ))
+            guest_id,
+            mark_read=mark_read,
+            guest_last_read_id=request.session.get(session_key),
+        )
+        if not request.user.is_authenticated and mark_read:
+            request.session[session_key] = payload.get('latest_message_id')
+        payload.pop('latest_message_id', None)
+        return JsonResponse(payload)
     except GameActionError as exc:
         return JsonResponse(exc.payload, status=exc.status)
 
 
-def save_chat_message_for_user(game_id, user, text):
-    game = get_game_for_user(game_id, user)
+def save_chat_message_for_user(game_id, user, text, guest_id=None, guest_name=''):
+    game = get_game_for_user(game_id, user, guest_id)
 
-    if not player_color_for_game(game, user):
+    if not player_color_for_game(game, user, guest_id):
         raise GameActionError('Apenas jogadores da partida podem usar o chat.', status=403)
 
     text = (text or '').strip()
@@ -1261,15 +1352,17 @@ def save_chat_message_for_user(game_id, user, text):
 
     return GameChatMessage.objects.create(
         game=game,
-        sender=user,
+        sender=user if user.is_authenticated else None,
+        sender_guest_id='' if user.is_authenticated else guest_id or '',
+        sender_guest_name='' if user.is_authenticated else guest_name or 'Invitado',
         text=text,
     )
 
 
-def serialize_game_chat_for_user(game_id, user, mark_read=False):
-    game = get_game_for_user(game_id, user)
+def serialize_game_chat_for_user(game_id, user, guest_id=None, mark_read=False, guest_last_read_id=None):
+    game = get_game_for_user(game_id, user, guest_id)
 
-    if not player_color_for_game(game, user):
+    if not player_color_for_game(game, user, guest_id):
         raise GameActionError('Apenas jogadores da partida podem usar o chat.', status=403)
 
     messages = list(
@@ -1278,37 +1371,47 @@ def serialize_game_chat_for_user(game_id, user, mark_read=False):
         .order_by('created_at', 'id')[:100]
     )
     latest_message = messages[-1] if messages else None
-    read_state, _ = GameChatRead.objects.get_or_create(game=game, user=user)
+    read_state = None
+    if user.is_authenticated:
+        read_state, _ = GameChatRead.objects.get_or_create(game=game, user=user)
 
-    if mark_read and latest_message:
+    if read_state and mark_read and latest_message:
         read_state.last_read_message = latest_message
         read_state.save(update_fields=['last_read_message', 'updated_at'])
 
-    unread_query = GameChatMessage.objects.filter(game=game).exclude(sender=user)
+    unread_query = GameChatMessage.objects.filter(game=game)
 
-    if read_state.last_read_message_id:
+    if user.is_authenticated:
+        unread_query = unread_query.exclude(sender=user)
+    elif guest_id:
+        unread_query = unread_query.exclude(sender_guest_id=guest_id)
+
+    if read_state and read_state.last_read_message_id:
         unread_query = unread_query.filter(id__gt=read_state.last_read_message_id)
+    elif not user.is_authenticated and guest_last_read_id:
+        unread_query = unread_query.filter(id__gt=guest_last_read_id)
 
     return {
         'messages': [
             {
                 'id': message.id,
-                'sender': message.sender.username,
-                'mine': message.sender_id == user.id,
+                'sender': message.sender.username if message.sender_id else message.sender_guest_name or 'Invitado',
+                'mine': message.sender_id == user.id if user.is_authenticated else message.sender_guest_id == guest_id,
                 'text': message.text,
                 'created_at': timezone.localtime(message.created_at).strftime('%H:%M'),
             }
             for message in messages
         ],
         'unread_count': unread_query.count(),
+        'latest_message_id': latest_message.id if latest_message else None,
     }
 
 
-def serialize_chat_message(message, user):
+def serialize_chat_message(message, user, guest_id=None):
     return {
         'id': message.id,
-        'sender': message.sender.username,
-        'mine': message.sender_id == user.id,
+        'sender': message.sender.username if message.sender_id else message.sender_guest_name or 'Invitado',
+        'mine': message.sender_id == user.id if user.is_authenticated else message.sender_guest_id == guest_id,
         'text': message.text,
         'created_at': timezone.localtime(message.created_at).strftime('%H:%M'),
     }

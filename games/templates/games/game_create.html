@@ -14,6 +14,24 @@
     {% csrf_token %}
 
     <div class="form-field">
+        <span class="form-label">{% tr "game_type" %}</span>
+        <div class="option-group">
+            {% for option in form.game_type %}
+                <label class="option-item">
+                    {{ option.tag }}
+                    <span>{{ option.choice_label }}</span>
+                </label>
+            {% endfor %}
+        </div>
+        {% if not user.is_authenticated %}
+            <p class="field-help">{% tr "ranked_login_help" %}</p>
+        {% endif %}
+        {% for error in form.game_type.errors %}
+            <p class="field-error">{{ error }}</p>
+        {% endfor %}
+    </div>
+
+    <div class="form-field">
         <span class="form-label">{% tr "opponent" %}</span>
         <div class="option-group">
             {% for option in form.opponent_mode %}

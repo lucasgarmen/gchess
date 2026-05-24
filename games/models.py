@@ -24,15 +24,18 @@ class ChessGame(models.Model):
 ]
 
 
-    owner = models.ForeignKey(User, on_delete=models.CASCADE)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True)
     white_user = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, related_name='white_games')
     black_user = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True, related_name='black_games')
+    white_guest_id = models.CharField(max_length=40, blank=True)
+    black_guest_id = models.CharField(max_length=40, blank=True)
     title = models.CharField(max_length=100, blank=True)
     white_player = models.CharField(max_length=100)
     black_player = models.CharField(max_length=100)
     pgn = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     result = models.CharField(max_length=20, choices=RESULT_CHOICES, default='unknown')
+    is_rated = models.BooleanField(default=False)
     rating_applied = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='casual')
@@ -92,11 +95,14 @@ class GameInvitation(models.Model):
         ('cancelled', 'Cancelada'),
     ]
 
-    creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_game_invitations')
+    creator = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True, related_name='sent_game_invitations')
+    creator_guest_id = models.CharField(max_length=40, blank=True)
+    creator_guest_name = models.CharField(max_length=100, blank=True)
     opponent = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True, related_name='received_game_invitations')
     token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     opponent_mode = models.CharField(max_length=20, choices=OPPONENT_CHOICES)
     creator_color = models.CharField(max_length=20, choices=COLOR_CHOICES)
+    is_rated = models.BooleanField(default=False)
     time_control_minutes = models.PositiveIntegerField(blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     game = models.ForeignKey(ChessGame, on_delete=models.SET_NULL, blank=True, null=True, related_name='invitations')
@@ -104,12 +110,15 @@ class GameInvitation(models.Model):
     responded_at = models.DateTimeField(blank=True, null=True)
 
     def __str__(self):
-        return f"Convite de {self.creator.username}"
+        creator = self.creator.username if self.creator_id else (self.creator_guest_name or 'Invitado')
+        return f"Convite de {creator}"
 
 
 class GameChatMessage(models.Model):
     game = models.ForeignKey(ChessGame, on_delete=models.CASCADE, related_name='chat_messages')
-    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_game_chat_messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True, related_name='sent_game_chat_messages')
+    sender_guest_id = models.CharField(max_length=40, blank=True)
+    sender_guest_name = models.CharField(max_length=100, blank=True)
     text = models.CharField(max_length=500)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -117,7 +126,8 @@ class GameChatMessage(models.Model):
         ordering = ['created_at', 'id']
 
     def __str__(self):
-        return f"{self.sender.username}: {self.text[:40]}"
+        sender = self.sender.username if self.sender_id else (self.sender_guest_name or 'Invitado')
+        return f"{sender}: {self.text[:40]}"
 
 
 class GameChatRead(models.Model):

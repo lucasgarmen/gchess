@@ -150,7 +150,7 @@ class GameAccessTests(TestCase):
 
         response = self.client.get(reverse("game_detail", args=[game.id]))
 
-        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.status_code, 404)
 
     def test_games_list_only_shows_current_users_games(self):
         user = User.objects.create_user(username="list-user", password="pass")
@@ -358,6 +358,71 @@ class GameAccessTests(TestCase):
 
 
 class GameCreationTests(TestCase):
+    def test_anonymous_user_can_create_casual_link_invitation(self):
+        response = self.client.post(reverse("game_create"), data={
+            "game_type": "casual",
+            "opponent_mode": "link",
+            "color_choice": "white",
+            "time_control_minutes": "",
+        })
+
+        invitation = GameInvitation.objects.get()
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNone(invitation.creator)
+        self.assertFalse(invitation.is_rated)
+        self.assertEqual(invitation.opponent_mode, "link")
+        self.assertTrue(invitation.creator_guest_id)
+        self.assertTrue(invitation.creator_guest_name.startswith("Invitado"))
+
+    def test_anonymous_user_cannot_force_ranked_invitation(self):
+        response = self.client.post(reverse("game_create"), data={
+            "game_type": "ranked",
+            "opponent_mode": "link",
+            "color_choice": "white",
+            "time_control_minutes": "",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(GameInvitation.objects.count(), 0)
+
+    def test_guest_link_players_can_open_state_and_move(self):
+        creator_client = Client()
+        opponent_client = Client()
+
+        creator_client.post(reverse("game_create"), data={
+            "game_type": "casual",
+            "opponent_mode": "link",
+            "color_choice": "white",
+            "time_control_minutes": "",
+        })
+        invitation = GameInvitation.objects.get()
+
+        accept_response = opponent_client.get(reverse("accept_invitation_link", args=[invitation.token]))
+        invitation.refresh_from_db()
+        game = invitation.game
+
+        self.assertRedirects(accept_response, reverse("game_detail", args=[game.id]))
+        self.assertEqual(game.white_guest_id, invitation.creator_guest_id)
+        self.assertEqual(game.black_guest_id, opponent_client.session["guest_id"])
+        self.assertFalse(game.is_rated)
+
+        move_response = creator_client.post(
+            reverse("save_move", args=[game.id]),
+            data=json.dumps({
+                "from": "e2",
+                "to": "e4",
+                "piece_color": "white",
+                "piece_type": "pawn",
+            }),
+            content_type="application/json",
+        )
+        state_response = opponent_client.get(reverse("game_state", args=[game.id]))
+
+        self.assertEqual(move_response.status_code, 200)
+        self.assertEqual(state_response.status_code, 200)
+        self.assertEqual(state_response.json()["move_count"], 1)
+        self.assertEqual(state_response.json()["turn"], "black")
+
     def test_logged_in_user_can_create_link_invitation(self):
         user = User.objects.create_user(username="creator", password="pass")
         self.client.force_login(user)

@@ -47,6 +47,7 @@ const DRAG_PIECE_SCALE = 1.7;
 const GAME_STATE_POLL_INTERVAL_MS = 1000;
 const GAME_SOCKET_RECONNECT_MS = 3000;
 const POLLING_LOG_PREFIX = '[gchess polling]';
+const COMPUTER_GAME_STATE_KEY = 'gchess-computer-game-state';
 
 function pollingLog(message, details = {}) {
     console.log(POLLING_LOG_PREFIX, message, details);
@@ -63,6 +64,10 @@ function currentUserId() {
     }
 
     return Number(CURRENT_USER_ID) || null;
+}
+
+function isHomeComputerGame() {
+    return isComputerMode() && typeof ANALYZER_MODE === 'undefined';
 }
 
 //Funcçao para redireccionar usuario que nao está logueado
@@ -1416,6 +1421,7 @@ if (isMultiplayerMode() && SAVED_MOVES.length === 0 && typeof GAME_ID !== 'undef
     }
 }
 
+restoreComputerGameState();
 updateBoardOrientation();
 renderSavedMoveList();
 loadPositionUntil(SAVED_MOVES.length);
@@ -2809,6 +2815,7 @@ function loadPositionUntil(index) {
     updateTurnIndicator();
     updateHistoryControls();
     updateCapturedMaterial();
+    saveComputerGameState();
 }
 
 function movesAreEqual(firstMove, secondMove) {
@@ -3229,6 +3236,7 @@ function undoComputerMove() {
     loadPositionUntil(SAVED_MOVES.length);
     renderSavedMoveList();
     enableComputerEloSelect();
+    saveComputerGameState();
 
     if (currentTurn === computerColor()) {
         askComputerMove();
@@ -3251,6 +3259,7 @@ function resetComputerGame() {
     loadPositionUntil(0);
     renderSavedMoveList();
     enableComputerEloSelect();
+    saveComputerGameState();
 
     if (currentTurn === computerColor()) {
         askComputerMove();
@@ -3266,6 +3275,7 @@ function toggleCoach() {
     } else {
         setCoachComment('');
     }
+    saveComputerGameState();
 }
 
 function setCoachComment(message) {
@@ -3288,9 +3298,11 @@ function addTrainerChatMessage(message, type) {
 
     const item = document.createElement('div');
     item.classList.add('trainer-chat-message', `trainer-chat-message-${type}`);
+    item.dataset.messageType = type;
     item.innerText = message;
     log.appendChild(item);
     log.scrollTop = log.scrollHeight;
+    saveComputerGameState();
 }
 
 function updateTrainerChatControls() {
@@ -3313,6 +3325,98 @@ function trainerChatMoves() {
     }
 
     return SAVED_MOVES;
+}
+
+function trainerChatLogState() {
+    const log = document.getElementById('trainer-chat-log');
+
+    if (!log) {
+        return [];
+    }
+
+    return Array.from(log.children).map(item => ({
+        type: item.dataset.messageType || (item.classList.contains('trainer-chat-message-user') ? 'user' : 'trainer'),
+        message: item.innerText,
+    }));
+}
+
+function restoreTrainerChatLog(messages) {
+    const log = document.getElementById('trainer-chat-log');
+
+    if (!log || !Array.isArray(messages)) {
+        return;
+    }
+
+    log.replaceChildren();
+
+    messages.forEach(entry => {
+        const item = document.createElement('div');
+        const type = entry.type === 'user' ? 'user' : 'trainer';
+        item.classList.add('trainer-chat-message', `trainer-chat-message-${type}`);
+        item.dataset.messageType = type;
+        item.innerText = entry.message || '';
+        log.appendChild(item);
+    });
+
+    log.scrollTop = log.scrollHeight;
+}
+
+function saveComputerGameState() {
+    if (!isHomeComputerGame() || typeof window.sessionStorage === 'undefined') {
+        return;
+    }
+
+    const eloSelect = document.getElementById('computer-elo');
+
+    try {
+        window.sessionStorage.setItem(COMPUTER_GAME_STATE_KEY, JSON.stringify({
+            moves: SAVED_MOVES,
+            playerColor: playerColor(),
+            elo: eloSelect ? eloSelect.value : null,
+            boardOrientation: boardOrientation,
+            coachEnabled: coachEnabled,
+            trainerMessages: trainerChatLogState(),
+        }));
+    } catch (error) {
+        console.warn('No se pudo guardar la partida local:', error);
+    }
+}
+
+function restoreComputerGameState() {
+    if (!isHomeComputerGame() || typeof window.sessionStorage === 'undefined') {
+        return;
+    }
+
+    let state;
+
+    try {
+        state = JSON.parse(window.sessionStorage.getItem(COMPUTER_GAME_STATE_KEY) || 'null');
+    } catch (error) {
+        return;
+    }
+
+    if (!state || !Array.isArray(state.moves)) {
+        return;
+    }
+
+    SAVED_MOVES.splice(0, SAVED_MOVES.length, ...state.moves);
+
+    if (state.playerColor && typeof PLAYER_COLOR !== 'undefined') {
+        PLAYER_COLOR = state.playerColor;
+        const playerColorSelect = document.getElementById('player-color');
+        if (playerColorSelect) {
+            playerColorSelect.value = PLAYER_COLOR;
+        }
+    }
+
+    const eloSelect = document.getElementById('computer-elo');
+    if (eloSelect && state.elo) {
+        eloSelect.value = state.elo;
+    }
+
+    coachEnabled = Boolean(state.coachEnabled);
+    boardOrientation = state.boardOrientation || playerColor();
+    restoreTrainerChatLog(state.trainerMessages);
 }
 
 async function askTrainerChat(question) {
@@ -3419,9 +3523,17 @@ if (toggleCoachButton) {
     toggleCoachButton.addEventListener('click', toggleCoach);
 }
 
+const computerEloSelect = document.getElementById('computer-elo');
+if (computerEloSelect) {
+    computerEloSelect.addEventListener('change', saveComputerGameState);
+}
+
 const flipBoardButton = document.getElementById('flip-board');
 if (flipBoardButton) {
-    flipBoardButton.addEventListener('click', flipBoard);
+    flipBoardButton.addEventListener('click', function () {
+        flipBoard();
+        saveComputerGameState();
+    });
 }
 
 if (offerDrawButton) {
@@ -3586,6 +3698,7 @@ if (playerColorSelect) {
         updateBoardOrientation();
         updateTurnIndicator();
         updateHistoryControls();
+        saveComputerGameState();
 
         if (currentTurn === computerColor()) {
             askComputerMove();
@@ -3624,6 +3737,8 @@ if (trainerChatInput) {
         submitTrainerChatQuestion();
     });
 }
+
+document.addEventListener('gchess:before-language-change', saveComputerGameState);
 
 
 function updatePgnBox() {

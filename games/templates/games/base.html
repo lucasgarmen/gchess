@@ -11,7 +11,7 @@
     <link rel="icon" href="{% static 'images/favicon.png' %}" type="image/png">
     <link rel="shortcut icon" href="{% static 'images/favicon.png' %}" type="image/png">
     <link rel="apple-touch-icon" href="{% static 'images/favicon.png' %}">
-    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=29">
+    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=30">
 </head>
 
 <body>
@@ -29,7 +29,7 @@
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ request.get_full_path }}">
         <label for="language-select">{% tr "language" %}</label>
-        <select id="language-select" name="language" onchange="this.form.submit()">
+        <select id="language-select" name="language">
             {% for code, label in language_options %}
                 <option value="{{ code }}"{% if code == current_language %} selected{% endif %}>{{ label }}</option>
             {% endfor %}
@@ -63,6 +63,15 @@
     {{ ui_texts|json_script:"ui-texts-data" }}
     <script>
         const UI_TEXTS = JSON.parse(document.getElementById('ui-texts-data').textContent);
+    </script>
+    <script>
+        const languageSelect = document.getElementById('language-select');
+        if (languageSelect) {
+            languageSelect.addEventListener('change', function () {
+                document.dispatchEvent(new CustomEvent('gchess:before-language-change'));
+                languageSelect.form.submit();
+            });
+        }
     </script>
 
     {% block content %}
