@@ -2055,9 +2055,10 @@ nav > span {
     }
 
     .computer-game-layout .trainer-chat-log {
-        flex: 1 1 auto;
-        max-height: 220px;
-        min-height: 128px;
+        flex: 0 0 150px;
+        height: 150px;
+        max-height: 150px;
+        min-height: 150px;
         overflow: auto;
     }
 
