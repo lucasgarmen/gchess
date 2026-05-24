@@ -1522,7 +1522,6 @@ def open_stockfish_engine(stockfish_path):
         asyncio.set_event_loop_policy(previous_policy)
 
 
-@login_required
 @require_POST
 @rate_limit(30, 60, 'engine-move')
 def engine_move(request):
@@ -1650,7 +1649,6 @@ def choose_engine_move(engine, board, elo):
     return random.choices(candidates, weights=weights, k=1)[0]
 
 
-@login_required
 @require_POST
 @rate_limit(20, 60, 'coach-analysis')
 def coach_analysis(request):
@@ -1772,7 +1770,6 @@ def board_from_move_data(moves):
     return board, san_moves
 
 
-@login_required
 @require_POST
 @rate_limit(20, 60, 'trainer-chat')
 def trainer_chat(request):

@@ -566,7 +566,7 @@ button {
 }
 
 .computer-game-layout {
-    grid-template-columns: 220px max-content minmax(280px, 360px);
+    grid-template-columns: max-content minmax(280px, 360px);
     max-width: 1430px;
 }
 
@@ -599,6 +599,10 @@ button {
 
 .computer-captured-material .captured-black .captured-piece {
     filter: brightness(0.92) contrast(1.08) drop-shadow(0 1px 2px rgba(255, 255, 255, 0.24));
+}
+
+.nav-captured-material {
+    display: none;
 }
 
 .online-game-layout {
@@ -696,6 +700,29 @@ button {
 .game-actions .analyze-game-button,
 .draw-offer-actions button {
     flex: 1 1 auto;
+}
+
+.computer-tabs {
+    display: flex;
+    gap: 8px;
+}
+
+.computer-tab-button {
+    background: #171510;
+    border: 1px solid rgba(240, 217, 181, 0.18);
+    border-radius: 8px;
+    color: var(--text-muted);
+    flex: 1 1 0;
+    min-height: 40px;
+}
+
+.computer-tab-button.active {
+    background: linear-gradient(180deg, var(--accent-strong), var(--accent));
+    color: #17130f;
+}
+
+.computer-tab-panel[hidden] {
+    display: none !important;
 }
 
 .analyze-game-button {
@@ -1398,6 +1425,14 @@ button {
         width: min(100%, var(--computer-stack-width));
     }
 
+    .computer-game-layout .computer-play-panel {
+        order: 1;
+    }
+
+    .computer-game-layout .board-area {
+        order: 0;
+    }
+
     .computer-game-layout .board-wrapper {
         justify-content: center;
         max-width: var(--computer-stack-width);
@@ -1852,6 +1887,288 @@ nav a:hover {
 nav > span {
     color: var(--accent);
     margin-left: auto;
+}
+
+@media (min-width: 1101px) {
+    body {
+        padding: 0 24px 0 232px;
+    }
+
+    body > hr {
+        display: none;
+    }
+
+    nav {
+        align-content: stretch;
+        align-items: stretch;
+        border-radius: 0;
+        border-width: 0 1px 0 0;
+        bottom: 0;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        gap: 8px;
+        left: 0;
+        overflow: auto;
+        padding: 16px 14px;
+        position: fixed;
+        top: 0;
+        width: 208px;
+        z-index: 50;
+    }
+
+    .nav-brand {
+        height: 68px;
+        margin: 0 0 18px;
+        transform: none;
+        width: 100%;
+    }
+
+    nav a,
+    nav button,
+    .notification-area > button {
+        align-items: center;
+        display: flex;
+        justify-content: flex-start;
+        min-height: 42px;
+        text-align: left;
+        width: 100%;
+    }
+
+    nav > span {
+        border-top: 1px solid rgba(240, 217, 181, 0.14);
+        margin: auto 0 0;
+        padding-top: 12px;
+    }
+
+    nav form:not(.language-form),
+    .notification-area {
+        display: block;
+        margin: 0;
+        width: 100%;
+    }
+
+    .language-form {
+        align-items: stretch;
+        border-top: 1px solid rgba(240, 217, 181, 0.14);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 6px;
+        padding-top: 12px;
+    }
+
+    .language-form select {
+        width: 100%;
+    }
+
+    .notification-panel {
+        left: calc(100% + 10px);
+        right: auto;
+        top: 0;
+    }
+
+    .home-title {
+        display: none;
+    }
+
+    .computer-game-layout {
+        --square-size: clamp(56px, min(calc((100svh - 186px) / 8), calc((100vw - 700px) / 8)), 88px);
+        --board-panel-height: calc((var(--square-size) * 8) + 40px);
+        --captured-panel-height: 66px;
+
+        align-items: center;
+        display: grid;
+        gap: 28px;
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+        height: 100svh;
+        justify-content: center;
+        margin: 0;
+        max-width: none;
+        overflow: hidden;
+        padding: 16px 0;
+    }
+
+    .computer-game-layout .board-area {
+        align-items: start;
+        height: calc(100svh - 32px);
+        justify-content: center;
+        min-width: 0;
+        padding-top: 18px;
+    }
+
+    .computer-game-layout .board-wrapper {
+        margin: 0 auto;
+        padding: 12px;
+    }
+
+    .nav-captured-material {
+        display: grid;
+        flex: 0 0 auto;
+        margin: 4px 0 8px;
+        max-width: none;
+        width: 100%;
+    }
+
+    .nav-captured-material .captured-row {
+        min-height: 24px;
+    }
+
+    .nav-captured-material .captured-piece {
+        height: 22px;
+        width: 22px;
+    }
+
+    .nav-captured-material .material-advantage {
+        font-size: 12px;
+        min-width: 20px;
+    }
+
+    .computer-game-layout .computer-play-panel {
+        align-self: center;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        height: min(calc(100svh - 64px), 620px);
+        min-width: 0;
+        width: 100%;
+    }
+
+    .computer-game-layout .computer-tab-panel {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+        width: 100%;
+    }
+
+    .computer-game-layout .computer-panel,
+    .computer-game-layout .pgn-panel {
+        margin: 0;
+        max-width: none;
+        padding: 12px;
+    }
+
+    .computer-game-layout .trainer-chat {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .computer-game-layout .trainer-chat-log {
+        flex: 1 1 auto;
+        max-height: 220px;
+        min-height: 128px;
+        overflow: auto;
+    }
+
+    .computer-game-layout .pgn-box {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .computer-game-layout .computer-tabs {
+        gap: 6px;
+    }
+
+    .computer-game-layout .computer-tab-button {
+        font-size: 13px;
+        min-height: 32px;
+        padding: 6px 10px;
+    }
+
+    .computer-game-layout .computer-panel label {
+        font-size: 12px;
+        margin-bottom: 4px;
+    }
+
+    .computer-game-layout .computer-panel select {
+        font-size: 13px;
+        height: 34px;
+        margin-top: 4px;
+        padding: 5px 8px;
+    }
+
+    .computer-game-layout .computer-panel label + select + label {
+        margin-top: 8px;
+    }
+
+    .computer-game-layout .computer-panel .computer-controls {
+        display: grid;
+        gap: 6px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 10px;
+    }
+
+    .computer-game-layout .computer-panel .computer-controls button {
+        font-size: 11px;
+        line-height: 1.15;
+        min-height: 34px;
+        padding: 5px 6px;
+        width: 100%;
+    }
+
+    .computer-game-layout .coach-comment {
+        font-size: 12px;
+        line-height: 1.25;
+        margin-top: 8px;
+        padding: 7px 8px;
+    }
+
+    .computer-game-layout .trainer-chat {
+        margin-top: 8px;
+        padding-top: 8px;
+    }
+
+    .computer-game-layout .trainer-chat h2 {
+        font-size: 14px;
+        margin-bottom: 6px;
+    }
+
+    .computer-game-layout .trainer-chat-log {
+        gap: 5px;
+        padding: 8px;
+    }
+
+    .computer-game-layout .trainer-chat-message {
+        font-size: 12px;
+        line-height: 1.28;
+    }
+
+    .computer-game-layout .trainer-chat-form {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px;
+        margin-top: 7px;
+    }
+
+    .computer-game-layout .trainer-chat-form input {
+        font-size: 13px;
+        min-height: 34px;
+        padding: 6px 8px;
+    }
+
+    .computer-game-layout .trainer-chat-form button {
+        font-size: 12px;
+        min-height: 34px;
+        padding: 6px 10px;
+        width: auto;
+    }
+
+    .computer-game-layout .pgn-panel h2 {
+        font-size: 16px;
+        margin-bottom: 6px;
+    }
+
+    .computer-game-layout .history-controls {
+        gap: 6px;
+        margin-bottom: 8px;
+    }
+
+    .computer-game-layout .history-controls button,
+    .computer-game-layout .game-actions button {
+        font-size: 12px;
+        min-height: 32px;
+        padding: 5px 8px;
+    }
 }
 
 @media (max-width: 900px) {

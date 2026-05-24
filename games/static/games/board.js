@@ -3460,6 +3460,10 @@ async function askTrainerChat(question) {
             return;
         }
 
+        if (data.source) {
+            console.log('Fonte do chat do treinador:', data.source);
+        }
+
         addTrainerChatMessage(data.answer, 'trainer');
     } catch (error) {
         console.error('Erro ao perguntar ao treinador:', error);
@@ -3738,6 +3742,24 @@ function savedMovesAsInternalPgn() {
         return `${move.move_number}. ${move.from} -> ${move.to}${promotion}`;
     }).join('\n');
 }
+
+function activateComputerTab(tabName) {
+    document.querySelectorAll('[data-computer-tab]').forEach(button => {
+        const isActive = button.dataset.computerTab === tabName;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+
+    document.querySelectorAll('[data-computer-panel]').forEach(panel => {
+        panel.hidden = panel.dataset.computerPanel !== tabName;
+    });
+}
+
+document.querySelectorAll('[data-computer-tab]').forEach(button => {
+    button.addEventListener('click', function () {
+        activateComputerTab(button.dataset.computerTab);
+    });
+});
 
 if (analyzeGameForm && analyzeGamePgn) {
     analyzeGameForm.addEventListener('submit', function () {

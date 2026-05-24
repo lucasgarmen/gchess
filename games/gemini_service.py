@@ -95,7 +95,12 @@ def generate_gemini_explanation(prompt, namespace="trainer_chat"):
         with request.urlopen(gemini_request, timeout=gemini_timeout()) as response:
             response_payload = json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
-        logger.warning("Gemini HTTP error %s: %s", exc.code, exc.reason)
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:800]
+        except OSError:
+            body = ""
+        logger.warning("Gemini HTTP error %s: %s %s", exc.code, exc.reason, body)
         return None
     except (error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         logger.warning("Gemini request failed: %s", exc)
