@@ -30,20 +30,26 @@
 
 {% if moves %}
 <main class="game-layout computer-game-layout">
-    <aside class="card computer-panel">
-        <div class="trainer-chat">
-            <h2>{% tr "coach_chat" %}</h2>
-            <div id="trainer-chat-log" class="trainer-chat-log"></div>
-            <form id="trainer-chat-form" class="trainer-chat-form">
-                <input
-                    id="trainer-chat-input"
-                    type="text"
-                    placeholder="{% tr "ask_current_position" %}"
-                    autocomplete="off"
-                >
-                <button id="trainer-chat-submit" type="submit">{% tr "ask" %}</button>
-            </form>
+    <aside class="computer-side computer-play-panel analyzer-coach-side">
+        <div class="computer-tabs" role="tablist" aria-label="{% tr "game" %}">
+            <button id="computer-tab-coach" class="computer-tab-button active" type="button" data-computer-tab="coach" aria-controls="computer-coach-panel" aria-selected="true">{% tr "coach_chat" %}</button>
         </div>
+
+        <section id="computer-coach-panel" class="computer-tab-panel computer-panel" data-computer-panel="coach" role="tabpanel" aria-labelledby="computer-tab-coach">
+            <div class="trainer-chat">
+                <h2>{% tr "coach_chat" %}</h2>
+                <div id="trainer-chat-log" class="trainer-chat-log"></div>
+                <form id="trainer-chat-form" class="trainer-chat-form">
+                    <input
+                        id="trainer-chat-input"
+                        type="text"
+                        placeholder="{% tr "ask_current_position" %}"
+                        autocomplete="off"
+                    >
+                    <button id="trainer-chat-submit" type="submit">{% tr "ask" %}</button>
+                </form>
+            </div>
+        </section>
     </aside>
 
     <section class="board-area">
@@ -107,9 +113,11 @@
     const SAVED_MOVES = JSON.parse(document.getElementById('saved-moves-data').textContent);
     const MOVE_ANALYSIS = JSON.parse(document.getElementById('analysis-data').textContent);
     const UI_LANGUAGE = "{{ current_language }}";
+    let PLAYER_COLOR = 'white';
 </script>
 
-<script src="{% static 'games/board.js' %}?v=68"></script>
+<script src="{% static 'games/board.js' %}?v=71"></script>
+<script src="{% static 'games/analyzer_chat.js' %}?v=1"></script>
 <script src="{% static 'games/analyzer.js' %}?v=2"></script>
 
 {% endif %}

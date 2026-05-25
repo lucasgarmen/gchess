@@ -435,6 +435,15 @@ class GameAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
 
+    def test_analyzer_page_uses_computer_coach_chat_structure(self):
+        template = open("games/templates/games/game_analyzer.html", encoding="utf-8").read()
+
+        self.assertIn('computer-play-panel', template)
+        self.assertIn('id="computer-coach-panel"', template)
+        self.assertIn('id="trainer-chat-form"', template)
+        self.assertIn('games/analyzer_chat.js', template)
+        self.assertIn("let PLAYER_COLOR = 'white';", template)
+
     def test_missing_stockfish_returns_clear_engine_error(self):
         user = User.objects.create_user(username="stockfish-user", password="pass")
 

@@ -3788,6 +3788,7 @@ if (analyzeGameForm && analyzeGamePgn) {
 }
 
 if (trainerChatForm) {
+    trainerChatForm.dataset.trainerChatBound = 'true';
     trainerChatForm.addEventListener('submit', function (event) {
         event.preventDefault();
         submitTrainerChatQuestion();
