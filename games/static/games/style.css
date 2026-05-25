@@ -1171,7 +1171,8 @@ button {
     width: calc(var(--square-size) * 0.68);
 }
 .possible-move {
-    box-shadow: inset 0 0 0 5px rgba(0, 255, 0, 0.5);
+    background-image: linear-gradient(rgba(84, 186, 78, 0.42), rgba(84, 186, 78, 0.42));
+    box-shadow: inset 0 0 0 5px rgba(255, 230, 109, 0.7);
 }
 
 .game-status {
@@ -2502,7 +2503,8 @@ select:focus {
 }
 
 .possible-move {
-    box-shadow: inset 0 0 0 5px rgba(255, 230, 109, 0.52);
+    background-image: linear-gradient(rgba(84, 186, 78, 0.42), rgba(84, 186, 78, 0.42));
+    box-shadow: inset 0 0 0 5px rgba(255, 230, 109, 0.7);
 }
 
 .queued-move-target {

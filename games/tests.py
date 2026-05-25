@@ -222,8 +222,8 @@ class GameAccessTests(TestCase):
         self.assertContains(response, 'id="cancel-analysis-loading"')
         self.assertContains(response, 'Isso pode levar alguns segundos enquanto revisamos o PGN.')
         self.assertNotContains(response, 'Stockfish revisa')
-        self.assertContains(response, 'analysisRequest.abort()')
-        self.assertContains(response, 'fetch(analysisUrl')
+        self.assertContains(response, 'games/analysis_loading.js')
+        self.assertContains(response, "GChessAnalysisLoading.bindLink('analyze-game-button')")
 
     def test_analysis_loading_overlay_uses_selected_language(self):
         owner = User.objects.create_user(username="analysis-language-owner", password="pass")
@@ -434,6 +434,15 @@ class GameAccessTests(TestCase):
         response = self.client.post(reverse("game_analyzer"), data={"pgn": "this is not pgn"})
 
         self.assertEqual(response.status_code, 200)
+
+    def test_pgn_analyzer_form_includes_cancelable_loading_overlay(self):
+        response = self.client.get(reverse("game_analyzer"))
+
+        self.assertContains(response, 'id="pgn-analysis-form"')
+        self.assertContains(response, 'id="analysis-loading-overlay"')
+        self.assertContains(response, 'id="cancel-analysis-loading"')
+        self.assertContains(response, 'games/analysis_loading.js')
+        self.assertContains(response, "GChessAnalysisLoading.bindForm('pgn-analysis-form')")
 
     def test_analyzer_page_uses_computer_coach_chat_structure(self):
         template = open("games/templates/games/game_analyzer.html", encoding="utf-8").read()
