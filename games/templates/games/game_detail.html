@@ -146,6 +146,9 @@
 {{ clock|json_script:"game-clock-data" }}
 {{ draw_offer|json_script:"draw-offer-data" }}
 {{ multiplayer_mode|json_script:"multiplayer-mode-data" }}
+{{ react_game_context|json_script:"react-game-context-data" }}
+
+<div id="game-detail-react-root" hidden></div>
 
 <script>
     function parseJsonScript(scriptId, fallbackValue) {
@@ -169,6 +172,9 @@
     const MOVE_SOUND_URL = "{% static 'games/sounds/piece.mp3' %}";
 </script>
 
-<script src="{% static 'games/board.js' %}?v=69"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="{% static 'games/react/game_detail_app.js' %}?v=2"></script>
+<script src="{% static 'games/board.js' %}?v=70"></script>
 
 {% endblock %}

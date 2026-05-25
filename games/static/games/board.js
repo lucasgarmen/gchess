@@ -1283,99 +1283,38 @@ function createPieceElement(position) {
 
 updateTurnIndicator();
 
-for (let row = 8; row >= 1; row--) {
-    for (let col = 0; col < 8; col++) {
-        const square = document.createElement('div');
-        const coord = letters[col] + row;
-
-        square.classList.add('square');
-        square.dataset.coord = coord;
-
-        const isLight = (row + col) % 2 === 0;
-        square.classList.add(isLight ? 'square-light' : 'square-dark');
-
-        const position = initialPosition[coord];
-
-        square.style.backgroundColor = isLight ? '#f0d9b5' : '#b58863';
-       
-        if (position) {
-            square.appendChild(createPieceElement(position));
-            square.dataset.color = position.color;
-            square.dataset.type = position.type;
-        } else {
-            square.dataset.color = '';
-            square.dataset.type = '';
+function setupSquareInteraction(square) {
+    square.addEventListener('pointerdown', function (event) {
+        if (event.button !== 0) {
+            return;
         }
 
-        square.addEventListener('pointerdown', function (event) {
-            if (event.button !== 0) {
-                return;
-            }
+        startPieceDrag(square, event);
+    });
 
-            startPieceDrag(square, event);
-        });
-
-        square.addEventListener('click', async function () {
-            if (suppressNextClick) {
-                suppressNextClick = false;
-                if (!promotionPending && isViewingLatestPosition() && !gameOver && canPlayerMoveFrom(square)) {
-                    clearSelection();
-                    selectSquare(square);
-                }
-                return;
-            }
-
-            if (promotionPending) {
-                return;
-            }
-
-            if (canQueueMoveFrom(square) || (selectedSquare && canQueueMoveFrom(selectedSquare))) {
-                if (queuedMove) {
-                    clearQueuedMove();
-                    clearSelection();
-                    return;
-                }
-
-                if (selectedSquare === null) {
-                    selectSquare(square);
-                    return;
-                }
-
-                if (selectedSquare === square) {
-                    clearSelection();
-                    return;
-                }
-
-                if (isPossibleMove(square)) {
-                    queueMove(selectedSquare, square);
-                    return;
-                }
-
+    square.addEventListener('click', async function () {
+        if (suppressNextClick) {
+            suppressNextClick = false;
+            if (!promotionPending && isViewingLatestPosition() && !gameOver && canPlayerMoveFrom(square)) {
                 clearSelection();
-
-                if (canQueueMoveFrom(square)) {
-                    selectSquare(square);
-                }
-
-                return;
+                selectSquare(square);
             }
+            return;
+        }
 
+        if (promotionPending) {
+            return;
+        }
+
+        if (canQueueMoveFrom(square) || (selectedSquare && canQueueMoveFrom(selectedSquare))) {
             if (queuedMove) {
                 clearQueuedMove();
-            }
-
-            if (!isViewingLatestPosition() || gameOver) {
-                if (!analysisMode) {
-                    clearSelection();
-                    return;
-                }
+                clearSelection();
+                return;
             }
 
             if (selectedSquare === null) {
-                if (canPlayerMoveFrom(square)) {
-                    selectSquare(square);
-                }
-
+                selectSquare(square);
                 return;
             }
 
@@ -1384,31 +1323,112 @@ for (let row = 8; row >= 1; row--) {
                 return;
             }
 
-            if (sameColor(selectedSquare, square)) {
+            if (isPossibleMove(square)) {
+                queueMove(selectedSquare, square);
+                return;
+            }
+
+            clearSelection();
+
+            if (canQueueMoveFrom(square)) {
+                selectSquare(square);
+            }
+
+            return;
+        }
+
+        if (queuedMove) {
+            clearQueuedMove();
+        }
+
+        if (!isViewingLatestPosition() || gameOver) {
+            if (!analysisMode) {
                 clearSelection();
-
-                if (canPlayerMoveFrom(square)) {
-                    selectSquare(square);
-                }
-
                 return;
             }
-            
+        }
 
-            if (!isPossibleMove(square)) {
-                return;
+        if (selectedSquare === null) {
+            if (canPlayerMoveFrom(square)) {
+                selectSquare(square);
             }
 
-            if (analysisMode) {
-                await playAnalysisMove(selectedSquare, square);
-            } else {
-                await playMove(selectedSquare, square);
-            }
-        });
+            return;
+        }
 
-        board.appendChild(square);
-    }
+        if (selectedSquare === square) {
+            clearSelection();
+            return;
+        }
+
+        if (sameColor(selectedSquare, square)) {
+            clearSelection();
+
+            if (canPlayerMoveFrom(square)) {
+                selectSquare(square);
+            }
+
+            return;
+        }
+
+        if (!isPossibleMove(square)) {
+            return;
+        }
+
+        if (analysisMode) {
+            await playAnalysisMove(selectedSquare, square);
+        } else {
+            await playMove(selectedSquare, square);
+        }
+    });
 }
+
+function createLegacySquare(row, col) {
+    const square = document.createElement('div');
+    const coord = letters[col] + row;
+
+    square.classList.add('square');
+    square.dataset.coord = coord;
+
+    const isLight = (row + col) % 2 === 0;
+    square.classList.add(isLight ? 'square-light' : 'square-dark');
+
+    const position = initialPosition[coord];
+
+    square.style.backgroundColor = isLight ? '#f0d9b5' : '#b58863';
+
+    if (position) {
+        square.appendChild(createPieceElement(position));
+        square.dataset.color = position.color;
+        square.dataset.type = position.type;
+    } else {
+        square.dataset.color = '';
+        square.dataset.type = '';
+    }
+
+    return square;
+}
+
+function setupBoardSquares() {
+    let squares = Array.from(board.querySelectorAll('.square'));
+
+    if (squares.length !== 64) {
+        board.replaceChildren();
+
+        for (let row = 8; row >= 1; row--) {
+            for (let col = 0; col < 8; col++) {
+                board.appendChild(createLegacySquare(row, col));
+            }
+        }
+
+        squares = Array.from(board.querySelectorAll('.square'));
+        board.dataset.renderer = 'legacy';
+    }
+
+    squares.forEach(setupSquareInteraction);
+}
+
+setupBoardSquares();
 
 moveSound = buildSound(typeof MOVE_SOUND_URL !== 'undefined' ? MOVE_SOUND_URL : null, 1);
 startSound = buildSound(typeof START_SOUND_URL !== 'undefined' ? START_SOUND_URL : null, 1);

@@ -670,6 +670,18 @@ def game_detail(request, game_id):
         'multiplayer_mode': bool((game.white_user_id or game.white_guest_id) and (game.black_user_id or game.black_guest_id)),
         'clock': serialize_clock(game),
         'draw_offer': serialize_draw_offer(game, request.user, guest_id),
+        'react_game_context': {
+            'gameId': game.id,
+            'whitePlayer': game.white_player,
+            'blackPlayer': game.black_player,
+            'playerColor': player_color or '',
+            'status': game.status,
+            'result': game.result,
+            'movesCount': len(moves),
+            'multiplayerMode': bool((game.white_user_id or game.white_guest_id) and (game.black_user_id or game.black_guest_id)),
+            'clockEnabled': clock_enabled(game),
+            'language': current_language(request),
+        },
     })
 
 def game_create(request):

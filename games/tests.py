@@ -178,6 +178,25 @@ class GameAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_game_detail_mounts_react_without_replacing_legacy_board(self):
+        owner = User.objects.create_user(username="react-owner", password="pass")
+        game = ChessGame.objects.create(
+            owner=owner,
+            white_user=owner,
+            white_player=owner.username,
+            black_player="Guest",
+        )
+
+        self.client.force_login(owner)
+        response = self.client.get(reverse("game_detail", args=[game.id]))
+
+        self.assertContains(response, 'id="game-detail-react-root"')
+        self.assertContains(response, 'id="react-game-context-data"')
+        self.assertContains(response, 'games/react/game_detail_app.js')
+        self.assertContains(response, 'react-dom')
+        self.assertContains(response, 'id="board"')
+        self.assertContains(response, 'games/board.js')
+
     def test_games_list_only_shows_current_users_games(self):
         user = User.objects.create_user(username="list-user", password="pass")
         other = User.objects.create_user(username="other-list-user", password="pass")
