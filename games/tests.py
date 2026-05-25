@@ -220,8 +220,31 @@ class GameAccessTests(TestCase):
 
         self.assertContains(response, 'id="analysis-loading-overlay"')
         self.assertContains(response, 'id="cancel-analysis-loading"')
+        self.assertContains(response, 'Isso pode levar alguns segundos enquanto revisamos o PGN.')
+        self.assertNotContains(response, 'Stockfish revisa')
         self.assertContains(response, 'analysisRequest.abort()')
         self.assertContains(response, 'fetch(analysisUrl')
+
+    def test_analysis_loading_overlay_uses_selected_language(self):
+        owner = User.objects.create_user(username="analysis-language-owner", password="pass")
+        game = ChessGame.objects.create(
+            owner=owner,
+            white_user=owner,
+            white_player=owner.username,
+            black_player="Guest",
+            status="finished",
+            result="white",
+        )
+
+        session = self.client.session
+        session["language"] = "en"
+        session.save()
+        self.client.force_login(owner)
+        response = self.client.get(reverse("game_detail", args=[game.id]))
+
+        self.assertContains(response, 'Analyzing game')
+        self.assertContains(response, 'This may take a few seconds while we review the PGN.')
+        self.assertContains(response, 'Cancel review')
 
     def test_games_list_only_shows_current_users_games(self):
         user = User.objects.create_user(username="list-user", password="pass")
