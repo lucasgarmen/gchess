@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 
-from .models import ChessGame, GameInvitation, Move
+from .models import ChessGame, DailyVisit, GameInvitation, Move
 from .views import build_pgn_from_saved_game, evaluate_board_outcome, read_analyzer_game, read_internal_coordinate_game
 
 
@@ -591,3 +591,20 @@ class DeployReadinessTests(SimpleTestCase):
         for path in ("games/views.py", "config/settings.py", "build.sh", "Procfile"):
             source = open(path, encoding="utf-8").read()
             self.assertNotIn(r"C:\Users\lucas", source)
+
+
+class DailyVisitMiddlewareTests(TestCase):
+    def test_counts_public_get_requests_by_day(self):
+        self.client.get(reverse("home"))
+        self.client.get(reverse("home"))
+
+        daily_visit = DailyVisit.objects.get()
+        self.assertEqual(daily_visit.visits, 2)
+
+    def test_does_not_count_admin_requests(self):
+        admin_user = User.objects.create_superuser(username="admin", password="pass")
+        self.client.force_login(admin_user)
+
+        self.client.get(reverse("admin:index"))
+
+        self.assertEqual(DailyVisit.objects.count(), 0)

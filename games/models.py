@@ -75,6 +75,21 @@ class UserPresence(models.Model):
         return f"{self.user.username} online"
 
 
+class DailyVisit(models.Model):
+    date = models.DateField(unique=True)
+    visits = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date']
+        verbose_name = 'visita diaria'
+        verbose_name_plural = 'visitas diarias'
+
+    def __str__(self):
+        return f"{self.date}: {self.visits} visitas"
+
+
 class GameInvitation(models.Model):
     OPPONENT_CHOICES = [
         ('direct', 'Oponente escolhido'),

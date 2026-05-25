@@ -110,6 +110,7 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'games.i18n.SessionLanguageMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'games.middleware.DailyVisitMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
