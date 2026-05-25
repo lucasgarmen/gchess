@@ -94,6 +94,13 @@ class DrawOutcomeTests(SimpleTestCase):
 
 
 class InvitationLinkTests(TestCase):
+    def test_named_game_routes_use_english_urls(self):
+        self.assertEqual(reverse("games_list"), "/games/")
+        self.assertEqual(reverse("game_create"), "/games/new/")
+        self.assertEqual(reverse("game_detail", args=[12]), "/games/12/")
+        self.assertEqual(reverse("game_analyzer"), "/analyze/")
+        self.assertEqual(reverse("set_language"), "/language/")
+
     def test_accepts_link_invitation_and_redirects_to_game(self):
         creator = User.objects.create_user(username="creator", password="pass")
         opponent = User.objects.create_user(username="opponent", password="pass")
@@ -196,6 +203,25 @@ class GameAccessTests(TestCase):
         self.assertContains(response, 'react-dom')
         self.assertContains(response, 'id="board"')
         self.assertContains(response, 'games/board.js')
+
+    def test_finished_game_detail_includes_cancelable_analysis_loading_overlay(self):
+        owner = User.objects.create_user(username="analysis-owner", password="pass")
+        game = ChessGame.objects.create(
+            owner=owner,
+            white_user=owner,
+            white_player=owner.username,
+            black_player="Guest",
+            status="finished",
+            result="white",
+        )
+
+        self.client.force_login(owner)
+        response = self.client.get(reverse("game_detail", args=[game.id]))
+
+        self.assertContains(response, 'id="analysis-loading-overlay"')
+        self.assertContains(response, 'id="cancel-analysis-loading"')
+        self.assertContains(response, 'analysisRequest.abort()')
+        self.assertContains(response, 'fetch(analysisUrl')
 
     def test_games_list_only_shows_current_users_games(self):
         user = User.objects.create_user(username="list-user", password="pass")

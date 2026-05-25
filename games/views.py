@@ -1079,7 +1079,7 @@ def invitation_status(request, invitation_id):
     response = JsonResponse({
         'status': invitation.status,
         'game_id': invitation.game_id,
-        'game_url': f'/partidas/{invitation.game_id}/' if invitation.game_id else None,
+        'game_url': reverse('game_detail', args=[invitation.game_id]) if invitation.game_id else None,
     })
     response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     return response
@@ -1108,7 +1108,7 @@ def cancel_invitation(request, invitation_id):
 
     return JsonResponse({
         'status': 'cancelled',
-        'redirect_url': '/partidas/',
+        'redirect_url': reverse('games_list'),
     })
 
 
@@ -1196,7 +1196,7 @@ def accept_invitation(request, invitation_id):
     return JsonResponse({
         'status': 'accepted',
         'game_id': game.id,
-        'game_url': f'/partidas/{game.id}/',
+        'game_url': reverse('game_detail', args=[game.id]),
     })
 
 

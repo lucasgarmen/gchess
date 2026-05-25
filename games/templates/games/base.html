@@ -11,7 +11,7 @@
     <link rel="icon" href="{% static 'images/favicon.png' %}" type="image/png">
     <link rel="shortcut icon" href="{% static 'images/favicon.png' %}" type="image/png">
     <link rel="apple-touch-icon" href="{% static 'images/favicon.png' %}">
-    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=31">
+    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=32">
 </head>
 
 <body>
@@ -130,7 +130,7 @@
         });
 
         async function answerInvitation(invitationId, action) {
-            const response = await fetch(`/convites/${invitationId}/${action}/`, {
+            const response = await fetch(`/invitations/${invitationId}/${action}/`, {
                 method: 'POST',
                 headers: {
                     'X-CSRFToken': getBaseCSRFToken(),
@@ -138,7 +138,7 @@
             });
             const data = await response.json();
 
-            if (action === 'aceitar' && data.game_url) {
+            if (action === 'accept' && data.game_url) {
                 window.location.href = data.game_url;
                 return;
             }
@@ -173,14 +173,14 @@
                 acceptButton.type = 'button';
                 acceptButton.innerText = UI_TEXTS.accept;
                 acceptButton.addEventListener('click', function () {
-                    answerInvitation(invitation.id, 'aceitar');
+                    answerInvitation(invitation.id, 'accept');
                 });
 
                 const rejectButton = document.createElement('button');
                 rejectButton.type = 'button';
                 rejectButton.innerText = UI_TEXTS.reject;
                 rejectButton.addEventListener('click', function () {
-                    answerInvitation(invitation.id, 'recusar');
+                    answerInvitation(invitation.id, 'reject');
                 });
 
                 actions.append(acceptButton, rejectButton);

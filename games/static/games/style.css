@@ -1762,6 +1762,76 @@ button {
     font-weight: bold;
 }
 
+.analysis-loading-active {
+    overflow: hidden;
+}
+
+.analysis-loading-overlay {
+    align-items: center;
+    background: rgba(10, 9, 7, 0.78);
+    backdrop-filter: blur(5px);
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    left: 0;
+    padding: 24px;
+    position: fixed;
+    right: 0;
+    top: 0;
+    z-index: 200;
+}
+
+.analysis-loading-overlay[hidden] {
+    display: none;
+}
+
+.analysis-loading-panel {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent 70%),
+        var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: 0 26px 70px rgba(0, 0, 0, 0.55);
+    color: var(--text-main);
+    max-width: 380px;
+    padding: 24px;
+    text-align: center;
+    width: min(100%, 380px);
+}
+
+.analysis-loading-panel h2 {
+    color: var(--accent-strong);
+    font-size: 24px;
+    margin: 12px 0 8px;
+}
+
+.analysis-loading-panel p {
+    margin: 0 0 18px;
+}
+
+.analysis-loading-spinner {
+    animation: analysis-spin 0.9s linear infinite;
+    border: 4px solid rgba(240, 217, 181, 0.18);
+    border-left-color: var(--accent-strong);
+    border-radius: 50%;
+    height: 46px;
+    margin: 0 auto;
+    width: 46px;
+}
+
+.analysis-cancel-button {
+    background: #332f26;
+    border: 1px solid rgba(240, 217, 181, 0.24);
+    color: var(--accent);
+    width: 100%;
+}
+
+@keyframes analysis-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 /* Visual polish */
 :root {
     --bg: #12110f;

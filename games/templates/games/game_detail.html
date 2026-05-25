@@ -140,6 +140,15 @@
     </div>
 </main>
 
+<div id="analysis-loading-overlay" class="analysis-loading-overlay" role="status" aria-live="polite" hidden>
+    <div class="analysis-loading-panel">
+        <div class="analysis-loading-spinner" aria-hidden="true"></div>
+        <h2>Analizando partida</h2>
+        <p>Esto puede tardar unos segundos mientras Stockfish revisa el PGN.</p>
+        <button id="cancel-analysis-loading" class="analysis-cancel-button" type="button">Cancelar revision</button>
+    </div>
+</div>
+
 <a href="{% url 'games_list' %}">{% tr "back_to_games" %}</a>
 
 {{ moves|json_script:"saved-moves-data" }}
@@ -170,6 +179,78 @@
     const UI_LANGUAGE = "{{ current_language }}";
     const START_SOUND_URL = "{% static 'games/sounds/start-chess.mp3' %}";
     const MOVE_SOUND_URL = "{% static 'games/sounds/piece.mp3' %}";
+</script>
+<script>
+    (function () {
+        const analyzeButton = document.getElementById('analyze-game-button');
+        const overlay = document.getElementById('analysis-loading-overlay');
+        const cancelButton = document.getElementById('cancel-analysis-loading');
+        let analysisRequest = null;
+
+        if (!analyzeButton || !overlay || !cancelButton) {
+            return;
+        }
+
+        function showAnalysisLoading() {
+            overlay.hidden = false;
+            document.body.classList.add('analysis-loading-active');
+        }
+
+        function hideAnalysisLoading() {
+            overlay.hidden = true;
+            document.body.classList.remove('analysis-loading-active');
+        }
+
+        cancelButton.addEventListener('click', function () {
+            if (analysisRequest) {
+                analysisRequest.abort();
+                analysisRequest = null;
+            }
+
+            hideAnalysisLoading();
+        });
+
+        analyzeButton.addEventListener('click', async function (event) {
+            if (!window.fetch || !window.AbortController) {
+                showAnalysisLoading();
+                return;
+            }
+
+            event.preventDefault();
+            const analysisUrl = analyzeButton.href;
+            analysisRequest = new AbortController();
+            showAnalysisLoading();
+
+            try {
+                const response = await fetch(analysisUrl, {
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'text/html',
+                    },
+                    signal: analysisRequest.signal,
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Analysis request failed with ${response.status}`);
+                }
+
+                const html = await response.text();
+                window.history.pushState({}, '', response.url || analysisUrl);
+                document.open();
+                document.write(html);
+                document.close();
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    return;
+                }
+
+                window.location.href = analysisUrl;
+            } finally {
+                analysisRequest = null;
+            }
+        });
+    }());
 </script>
 
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
