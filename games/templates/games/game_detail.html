@@ -180,14 +180,14 @@
     const START_SOUND_URL = "{% static 'games/sounds/start-chess.mp3' %}";
     const MOVE_SOUND_URL = "{% static 'games/sounds/piece.mp3' %}";
 </script>
-<script src="{% static 'games/analysis_loading.js' %}?v=1"></script>
+<script src="{% static 'games/analysis_loading.js' %}?v=2"></script>
 <script>
-    window.GChessAnalysisLoading.bindLink('analyze-game-button');
+    window.GChessAnalysisLoading.bindLink('analyze-game-button', { navigate: true });
 </script>
 
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="{% static 'games/react/game_detail_app.js' %}?v=2"></script>
-<script src="{% static 'games/board.js' %}?v=70"></script>
+<script src="{% static 'games/board.js' %}?v=74"></script>
 
 {% endblock %}

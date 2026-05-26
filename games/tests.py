@@ -223,7 +223,7 @@ class GameAccessTests(TestCase):
         self.assertContains(response, 'Isso pode levar alguns segundos enquanto revisamos o PGN.')
         self.assertNotContains(response, 'Stockfish revisa')
         self.assertContains(response, 'games/analysis_loading.js')
-        self.assertContains(response, "GChessAnalysisLoading.bindLink('analyze-game-button')")
+        self.assertContains(response, "GChessAnalysisLoading.bindLink('analyze-game-button', { navigate: true })")
 
     def test_analysis_loading_overlay_uses_selected_language(self):
         owner = User.objects.create_user(username="analysis-language-owner", password="pass")
@@ -443,6 +443,14 @@ class GameAccessTests(TestCase):
         self.assertContains(response, 'id="cancel-analysis-loading"')
         self.assertContains(response, 'games/analysis_loading.js')
         self.assertContains(response, "GChessAnalysisLoading.bindForm('pgn-analysis-form')")
+
+    def test_home_analyze_button_uses_full_navigation_loading_overlay(self):
+        response = self.client.get(reverse("home"))
+
+        self.assertContains(response, 'id="analysis-loading-overlay"')
+        self.assertContains(response, 'id="cancel-analysis-loading"')
+        self.assertContains(response, 'games/analysis_loading.js')
+        self.assertContains(response, "GChessAnalysisLoading.bindForm('analyze-game-form', { navigate: true })")
 
     def test_analyzer_page_uses_computer_coach_chat_structure(self):
         template = open("games/templates/games/game_analyzer.html", encoding="utf-8").read()

@@ -118,6 +118,15 @@
     </aside>
 </main>
 
+<div id="analysis-loading-overlay" class="analysis-loading-overlay" role="status" aria-live="polite" hidden>
+    <div class="analysis-loading-panel">
+        <div class="analysis-loading-spinner" aria-hidden="true"></div>
+        <h2>{% tr "analysis_loading_title" %}</h2>
+        <p>{% tr "analysis_loading_help" %}</p>
+        <button id="cancel-analysis-loading" class="analysis-cancel-button" type="button">{% tr "cancel_review" %}</button>
+    </div>
+</div>
+
 <script>
     const GAME_ID = null;
     const SAVED_MOVES = [];
@@ -128,6 +137,10 @@
     let PLAYER_COLOR = 'white';
 </script>
 
-<script src="{% static 'games/board.js' %}?v=70"></script>
+<script src="{% static 'games/analysis_loading.js' %}?v=2"></script>
+<script src="{% static 'games/board.js' %}?v=74"></script>
+<script>
+    window.GChessAnalysisLoading.bindForm('analyze-game-form', { navigate: true });
+</script>
 
 {% endblock %}

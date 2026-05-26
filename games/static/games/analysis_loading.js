@@ -1,5 +1,6 @@
 (function () {
     let activeRequest = null;
+    let pendingNavigationTimer = null;
 
     function overlayElements() {
         return {
@@ -43,6 +44,12 @@
                 activeRequest = null;
             }
 
+            if (pendingNavigationTimer) {
+                window.clearTimeout(pendingNavigationTimer);
+                pendingNavigationTimer = null;
+            }
+
+            window.stop();
             hideLoading();
         });
     }
@@ -130,7 +137,16 @@
         }
     }
 
-    function bindLink(linkId) {
+    function submitWithLoading(action) {
+        showLoading();
+
+        pendingNavigationTimer = window.setTimeout(function () {
+            pendingNavigationTimer = null;
+            action();
+        }, 50);
+    }
+
+    function bindLink(linkId, options) {
         const link = document.getElementById(linkId);
 
         bindCancelButton();
@@ -141,11 +157,19 @@
 
         link.addEventListener('click', function (event) {
             event.preventDefault();
+
+            if (options && options.navigate) {
+                submitWithLoading(function () {
+                    window.location.href = link.href;
+                });
+                return;
+            }
+
             fetchAnalysis(link.href);
         });
     }
 
-    function bindForm(formId) {
+    function bindForm(formId, options) {
         const form = document.getElementById(formId);
 
         bindCancelButton();
@@ -156,6 +180,14 @@
 
         form.addEventListener('submit', function (event) {
             event.preventDefault();
+
+            if (options && options.navigate) {
+                submitWithLoading(function () {
+                    form.submit();
+                });
+                return;
+            }
+
             fetchAnalysis(form.action || window.location.href, {
                 method: form.method || 'POST',
                 body: new FormData(form),
