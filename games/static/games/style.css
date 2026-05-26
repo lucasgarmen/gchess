@@ -1757,10 +1757,157 @@ button {
 .analysis-comment {
     background-color: #111;
     color: #f0d9b5;
+    line-height: 1.38;
     padding: 12px;
     border-radius: 8px;
     margin-bottom: 14px;
     font-weight: bold;
+}
+
+.analyzer-game-layout {
+    align-items: center;
+}
+
+.analyzer-side {
+    height: min(calc(100svh - 28px), 820px);
+    width: min(380px, 100%);
+}
+
+.analyzer-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: auto;
+    padding-bottom: 18px;
+}
+
+.analysis-move-panel h2 {
+    color: var(--text-main);
+    font-size: 16px;
+    margin: 0 0 8px;
+}
+
+.analyzer-captured-material {
+    margin-top: auto;
+}
+
+.analyzer-pgn-panel {
+    height: auto;
+    min-height: 0;
+}
+
+.computer-game-layout.analyzer-game-layout .trainer-chat {
+    flex: 0 0 auto;
+    margin-top: 0;
+    min-height: 0;
+    padding-top: 0;
+}
+
+.computer-game-layout.analyzer-game-layout .trainer-chat-log {
+    flex: 0 0 150px;
+    height: 150px;
+    max-height: 150px;
+    min-height: 150px;
+}
+
+.computer-game-layout.analyzer-game-layout .trainer-chat-form,
+.computer-game-layout.analyzer-game-layout .analysis-move-panel,
+.computer-game-layout.analyzer-game-layout .history-controls,
+.computer-game-layout.analyzer-game-layout #turn-indicator,
+.computer-game-layout.analyzer-game-layout .analyzer-captured-material {
+    flex: 0 0 auto;
+}
+
+.computer-game-layout.analyzer-game-layout .analysis-comment {
+    height: calc(6 * 1.38em + 24px);
+    margin-bottom: 6px;
+    overflow-y: auto;
+}
+
+.computer-game-layout.analyzer-game-layout .history-controls {
+    margin-bottom: 8px;
+}
+
+.computer-game-layout.analyzer-game-layout #turn-indicator {
+    color: var(--text-main);
+    font-size: 15px;
+    line-height: 1.25;
+    margin: 2px 0 0;
+}
+
+.computer-game-layout.analyzer-game-layout .game-status {
+    font-size: 16px;
+    line-height: 1.2;
+    margin: 0;
+    padding: 8px 12px;
+}
+
+.computer-game-layout.analyzer-game-layout .analyzer-captured-material {
+    margin-top: auto;
+    min-height: 74px;
+    padding-bottom: 6px;
+}
+
+.analysis-leave-modal-active {
+    overflow: hidden;
+}
+
+.leave-analysis-modal {
+    align-items: center;
+    background: rgba(10, 9, 7, 0.78);
+    bottom: 0;
+    display: flex;
+    justify-content: center;
+    left: 0;
+    padding: 24px;
+    position: fixed;
+    right: 0;
+    top: 0;
+    z-index: 220;
+}
+
+.leave-analysis-modal[hidden] {
+    display: none;
+}
+
+.leave-analysis-dialog {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.055), transparent 70%),
+        var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: 0 26px 70px rgba(0, 0, 0, 0.55);
+    max-width: 420px;
+    padding: 24px;
+    width: min(100%, 420px);
+}
+
+.leave-analysis-dialog h2 {
+    color: var(--accent-strong);
+    margin: 0 0 10px;
+}
+
+.leave-analysis-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.leave-analysis-actions button {
+    flex: 1 1 0;
+}
+
+@media (min-height: 820px) {
+    .analyzer-side {
+        height: min(calc(100svh - 28px), 880px);
+    }
+
+    .computer-game-layout.analyzer-game-layout .trainer-chat-log {
+        flex-basis: 190px;
+        height: 190px;
+        max-height: 190px;
+        min-height: 190px;
+    }
 }
 
 .analysis-loading-active {

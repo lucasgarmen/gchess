@@ -623,9 +623,18 @@ function updateCastlingRightsAfterMove(move) {
 }
 
 function updateHistoryControls() {
+    const lastMoveButton = document.getElementById('last-move');
+
     document.getElementById('prev-move').disabled = analysisMode || historyIndex === 0;
     document.getElementById('next-move').disabled = analysisMode || historyIndex === SAVED_MOVES.length;
-    document.getElementById('last-move').disabled = analysisMode || isViewingLatestPosition();
+
+    if (lastMoveButton) {
+        lastMoveButton.disabled = analysisMode || (
+            typeof ANALYZER_MODE !== 'undefined' && ANALYZER_MODE
+                ? historyIndex === 0
+                : isViewingLatestPosition()
+        );
+    }
 
     const undoComputerButton = document.getElementById('undo-computer-move');
     if (undoComputerButton) {
@@ -2847,6 +2856,31 @@ function loadPositionUntil(index) {
     updateHistoryControls();
     updateCapturedMaterial();
     saveComputerGameState();
+    window.gchessHistoryIndex = historyIndex;
+    window.gchessSavedMoveCount = SAVED_MOVES.length;
+    updateAnalyzerCommentForPosition(historyIndex);
+    document.dispatchEvent(new CustomEvent('gchess:position-changed', {
+        detail: {
+            historyIndex: historyIndex,
+            moveCount: SAVED_MOVES.length,
+        },
+    }));
+}
+
+function updateAnalyzerCommentForPosition(index) {
+    const analysisComment = document.getElementById('analysis-comment');
+
+    if (!analysisComment || typeof MOVE_ANALYSIS === 'undefined' || !Array.isArray(MOVE_ANALYSIS)) {
+        return;
+    }
+
+    if (index === 0) {
+        analysisComment.innerText = analysisComment.dataset.initialComment || 'Posicao inicial.';
+        return;
+    }
+
+    const data = MOVE_ANALYSIS[index - 1];
+    analysisComment.innerText = data ? `${data.move_number}. ${data.comment}` : '';
 }
 
 function movesAreEqual(firstMove, secondMove) {
@@ -3542,7 +3576,11 @@ document.getElementById('next-move').addEventListener('click', function () {
 
 document.getElementById('last-move').addEventListener('click', function () {
     clearQueuedMove();
-    loadPositionUntil(SAVED_MOVES.length);
+    if (typeof ANALYZER_MODE !== 'undefined' && ANALYZER_MODE) {
+        loadPositionUntil(0);
+    } else {
+        loadPositionUntil(SAVED_MOVES.length);
+    }
 });
 
 const undoComputerButton = document.getElementById('undo-computer-move');

@@ -6,27 +6,44 @@
 {% tr "analyze_pgn" %}
 {% endblock %}
 
+{% block nav_extra %}
+{% if moves %}
+<div id="captured-material" class="captured-material board-captured-material computer-captured-material nav-captured-material">
+    <div class="captured-row captured-row-black">
+        <div id="captured-black" class="captured-pieces captured-black"></div>
+        <span id="white-material-advantage" class="material-advantage"></span>
+    </div>
+    <div class="captured-row captured-row-white">
+        <div id="captured-white" class="captured-pieces captured-white"></div>
+        <span id="black-material-advantage" class="material-advantage"></span>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
 {% block content %}
 
-<section class="analyzer-create-page">
-<h1>{% tr "analyze_pgn" %}</h1>
+{% if not moves %}
+    <section class="analyzer-create-page">
+    <h1>{% tr "analyze_pgn" %}</h1>
 
-<form id="pgn-analysis-form" method="POST" class="form-card">
-    {% csrf_token %}
+    <form id="pgn-analysis-form" method="POST" class="form-card">
+        {% csrf_token %}
 
-    <label for="pgn">{% tr "paste_pgn" %}</label>
-    <textarea name="pgn" id="pgn" rows="8">{{ pgn_text }}</textarea>
+        <label for="pgn">{% tr "paste_pgn" %}</label>
+        <textarea name="pgn" id="pgn" rows="8">{{ pgn_text }}</textarea>
 
-    <button type="submit">{% tr "analyze_game" %}</button>
-</form>
+        <button type="submit">{% tr "analyze_game" %}</button>
+    </form>
 
-{% if error_message %}
-    <div class="card">
-        <h2>{% tr "error" %}</h2>
-        <p>{{ error_message }}</p>
-    </div>
+    {% if error_message %}
+        <div class="card">
+            <h2>{% tr "error" %}</h2>
+            <p>{{ error_message }}</p>
+        </div>
+    {% endif %}
+    </section>
 {% endif %}
-</section>
 
 <div id="analysis-loading-overlay" class="analysis-loading-overlay" role="status" aria-live="polite" hidden>
     <div class="analysis-loading-panel">
@@ -43,13 +60,38 @@
 </script>
 
 {% if moves %}
-<main class="game-layout computer-game-layout">
-    <aside class="computer-side computer-play-panel analyzer-coach-side">
+<main class="game-layout computer-game-layout analyzer-game-layout">
+    <section class="board-area">
+        <div class="board-wrapper">
+            <div class="rank-labels">
+                <span>8</span><span>7</span><span>6</span><span>5</span>
+                <span>4</span><span>3</span><span>2</span><span>1</span>
+            </div>
+
+            <div>
+                <div class="board-toolbar">
+                    <button id="analysis-prev" class="icon-button analysis-nav-button" type="button" title="{% tr "previous" %}" aria-label="{% tr "previous" %}" hidden>&lt;</button>
+                    <button id="analysis-next" class="icon-button analysis-nav-button" type="button" title="{% tr "next" %}" aria-label="{% tr "next" %}" hidden>&gt;</button>
+                    <button id="toggle-analysis-mode" class="analysis-mode-button" type="button">{% tr "analysis_mode" %}</button>
+                    <button id="flip-board" class="icon-button" type="button" title="{% tr "flip_board" %}" aria-label="{% tr "flip_board" %}">↻</button>
+                </div>
+                <div id="board" class="board"></div>
+
+                <div class="file-labels">
+                    <span>a</span><span>b</span><span>c</span><span>d</span>
+                    <span>e</span><span>f</span><span>g</span><span>h</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <aside class="computer-side computer-play-panel analyzer-side">
         <div class="computer-tabs" role="tablist" aria-label="{% tr "game" %}">
             <button id="computer-tab-coach" class="computer-tab-button active" type="button" data-computer-tab="coach" aria-controls="computer-coach-panel" aria-selected="true">{% tr "coach_chat" %}</button>
+            <button id="computer-tab-pgn" class="computer-tab-button" type="button" data-computer-tab="pgn" aria-controls="computer-pgn-panel" aria-selected="false">PGN</button>
         </div>
 
-        <section id="computer-coach-panel" class="computer-tab-panel computer-panel" data-computer-panel="coach" role="tabpanel" aria-labelledby="computer-tab-coach">
+        <section id="computer-coach-panel" class="computer-tab-panel computer-panel analyzer-panel" data-computer-panel="coach" role="tabpanel" aria-labelledby="computer-tab-coach">
             <div class="trainer-chat">
                 <h2>{% tr "coach_chat" %}</h2>
                 <div id="trainer-chat-log" class="trainer-chat-log"></div>
@@ -63,60 +105,43 @@
                     <button id="trainer-chat-submit" type="submit">{% tr "ask" %}</button>
                 </form>
             </div>
+
+            <section class="analysis-move-panel">
+                <h2>{% tr "analysis" %}</h2>
+                <div id="analysis-comment" class="analysis-comment" data-initial-comment="{% tr "initial_position" %}">
+                    {% tr "initial_position" %}
+                </div>
+            </section>
+
+            <div class="history-controls">
+                <button id="prev-move">{% tr "previous" %}</button>
+                <button id="next-move">{% tr "next" %}</button>
+                <button id="last-move">{% tr "first_position" %}</button>
+            </div>
+
+            <p id="turn-indicator">{% tr "turn_white" %}</p>
+            <p id="game-status" class="game-status" hidden></p>
+
+        </section>
+
+        <section id="computer-pgn-panel" class="computer-tab-panel pgn-panel analyzer-pgn-panel" data-computer-panel="pgn" role="tabpanel" aria-labelledby="computer-tab-pgn" hidden>
+            <h2>PGN</h2>
+            <ul id="move-list" style="display: none;"></ul>
+            <pre id="pgn-box" class="pgn-box"></pre>
         </section>
     </aside>
-
-    <section class="board-area">
-        <div class="board-wrapper">
-            <div class="rank-labels">
-                <span>8</span><span>7</span><span>6</span><span>5</span>
-                <span>4</span><span>3</span><span>2</span><span>1</span>
-            </div>
-
-            <div>
-                <div class="board-toolbar">
-                    <button id="flip-board" class="icon-button" type="button" title="{% tr "flip_board" %}" aria-label="{% tr "flip_board" %}">↻</button>
-                </div>
-                <div id="board" class="board"></div>
-
-                <div class="file-labels">
-                    <span>a</span><span>b</span><span>c</span><span>d</span>
-                    <span>e</span><span>f</span><span>g</span><span>h</span>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <aside class="pgn-panel">
-        <h2>{% tr "analysis" %}</h2>
-
-        <p id="turn-indicator">{% tr "turn_white" %}</p>
-        <p id="game-status" class="game-status" hidden></p>
-
-        <div class="history-controls">
-            <button id="prev-move">{% tr "previous" %}</button>
-            <button id="next-move">{% tr "next" %}</button>
-            <button id="last-move">{% tr "last_position" %}</button>
-        </div>
-
-        <div id="analysis-comment" class="analysis-comment">
-            {% tr "initial_position" %}
-        </div>
-
-        <ul id="move-list" style="display: none;"></ul>
-        <pre id="pgn-box" class="pgn-box"></pre>
-        <div id="captured-material" class="captured-material">
-            <div class="captured-row">
-                <div id="captured-black" class="captured-pieces captured-black"></div>
-                <span id="white-material-advantage" class="material-advantage"></span>
-            </div>
-            <div class="captured-row">
-                <div id="captured-white" class="captured-pieces captured-white"></div>
-                <span id="black-material-advantage" class="material-advantage"></span>
-            </div>
-        </div>
-    </aside>
 </main>
+
+<div id="leave-analysis-modal" class="leave-analysis-modal" hidden>
+    <div class="leave-analysis-dialog" role="dialog" aria-modal="true" aria-labelledby="leave-analysis-title">
+        <h2 id="leave-analysis-title">{% tr "leave_analysis_title" %}</h2>
+        <p>{% tr "leave_analysis_help" %}</p>
+        <div class="leave-analysis-actions">
+            <button id="confirm-leave-analysis" class="danger-button" type="button">{% tr "leave_analysis_confirm" %}</button>
+            <button id="cancel-leave-analysis" type="button">{% tr "cancel" %}</button>
+        </div>
+    </div>
+</div>
 
 {{ moves|json_script:"saved-moves-data" }}
 {{ analysis|json_script:"analysis-data" }}
@@ -130,9 +155,9 @@
     let PLAYER_COLOR = 'white';
 </script>
 
-<script src="{% static 'games/board.js' %}?v=71"></script>
+<script src="{% static 'games/board.js' %}?v=73"></script>
 <script src="{% static 'games/analyzer_chat.js' %}?v=1"></script>
-<script src="{% static 'games/analyzer.js' %}?v=2"></script>
+<script src="{% static 'games/analyzer.js' %}?v=6"></script>
 
 {% endif %}
 

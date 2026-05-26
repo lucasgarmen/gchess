@@ -2493,7 +2493,37 @@ def game_analyzer(request):
         "error_message": error_message,
     })
 
+def build_descriptive_comment(loss, move_description, best_description, language='pt'):
+    if language == 'es':
+        if loss < 30:
+            return f"Buena jugada: {move_description}. La posicion se mantiene estable, asi que el plan general sigue funcionando. Aprovecha para revisar si tus piezas quedaron coordinadas y si el rey esta seguro."
+        if loss < 80:
+            return f"Imprecision: {move_description}. No arruina la posicion, pero habia una continuacion mas limpia: {best_description}. La idea es mejorar coordinacion o reducir pequenas debilidades antes de que se acumulen."
+        if loss < 180:
+            return f"Error: {move_description} empeora la posicion. Conviene comparar con {best_description}, que conserva mejor la actividad y evita ceder tanto control."
+        return f"Jugada critica: {move_description} pierde demasiada fuerza en la posicion. La alternativa {best_description} era mucho mas segura; revisa si la jugada dejo material, rey o casillas importantes vulnerables."
+
+    if language == 'en':
+        if loss < 30:
+            return f"Good move: {move_description}. The position stays stable, so your overall plan is still working. Check whether your pieces remain coordinated and your king is safe."
+        if loss < 80:
+            return f"Inaccuracy: {move_description}. It does not ruin the position, but {best_description} was cleaner. The point is to improve coordination or remove small weaknesses before they grow."
+        if loss < 180:
+            return f"Mistake: {move_description} worsens the position. Compare it with {best_description}, which keeps more activity and gives up less control."
+        return f"Critical move: {move_description} loses too much strength in the position. {best_description} was much safer; check whether material, king safety, or key squares became vulnerable."
+
+    if loss < 30:
+        return f"Boa jogada: {move_description}. A posicao continua saudavel, entao o plano geral ainda faz sentido. Vale observar se suas pecas ficaram coordenadas e se o rei segue seguro."
+    if loss < 80:
+        return f"Imprecisao: {move_description}. Nao estraga a posicao, mas havia um caminho mais limpo: {best_description}. A ideia e melhorar a coordenacao ou evitar pequenas fraquezas antes que elas crescam."
+    if loss < 180:
+        return f"Erro: {move_description} piora a posicao. Compare com {best_description}, que mantem mais atividade e entrega menos controle ao adversario."
+    return f"Lance critico: {move_description} perde muita forca na posicao. {best_description} era bem mais seguro; revise se a jogada deixou material, rei ou casas importantes vulneraveis."
+
+
 def generate_comment(loss, move_description, best_description, language='pt'):
+    return build_descriptive_comment(loss, move_description, best_description, language)
+
     if language == 'es':
         if loss < 30:
             return "Buena jugada. Mantiene una posición sana."

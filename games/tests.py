@@ -8,7 +8,7 @@ from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 
 from .models import ChessGame, DailyVisit, GameInvitation, Move
-from .views import build_pgn_from_saved_game, evaluate_board_outcome, read_analyzer_game, read_internal_coordinate_game
+from .views import build_pgn_from_saved_game, evaluate_board_outcome, generate_comment, read_analyzer_game, read_internal_coordinate_game
 
 
 class AnalyzerPgnParsingTests(SimpleTestCase):
@@ -448,10 +448,33 @@ class GameAccessTests(TestCase):
         template = open("games/templates/games/game_analyzer.html", encoding="utf-8").read()
 
         self.assertIn('computer-play-panel', template)
+        self.assertIn('analyzer-game-layout', template)
+        self.assertIn('analyzer-side', template)
         self.assertIn('id="computer-coach-panel"', template)
         self.assertIn('id="trainer-chat-form"', template)
+        self.assertIn('id="analysis-comment"', template)
+        self.assertIn('id="leave-analysis-modal"', template)
+        self.assertIn('{% tr "first_position" %}', template)
         self.assertIn('games/analyzer_chat.js', template)
         self.assertIn("let PLAYER_COLOR = 'white';", template)
+
+    def test_board_notifies_analyzer_when_position_changes(self):
+        source = open("games/static/games/board.js", encoding="utf-8").read()
+        analyzer = open("games/static/games/analyzer.js", encoding="utf-8").read()
+
+        self.assertIn("gchess:position-changed", source)
+        self.assertIn("gchessHistoryIndex", source)
+        self.assertIn("gchess:position-changed", analyzer)
+        self.assertIn("ANALYZER_MODE", source)
+        self.assertIn("loadPositionUntil(0)", source)
+
+    def test_analysis_comments_are_more_descriptive(self):
+        comment = generate_comment(40, "mover el caballo a f3", "desarrollar el alfil a c4", "es")
+
+        self.assertIn("Imprecision", comment)
+        self.assertIn("mover el caballo a f3", comment)
+        self.assertIn("desarrollar el alfil a c4", comment)
+        self.assertGreater(len(comment), 120)
 
     def test_missing_stockfish_returns_clear_engine_error(self):
         user = User.objects.create_user(username="stockfish-user", password="pass")
