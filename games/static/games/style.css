@@ -23,7 +23,8 @@ a {
 }
 
 a:hover {
-    color: white;
+    color: black;
+    font-weight: bold;
 }
 
 .notification-area {
