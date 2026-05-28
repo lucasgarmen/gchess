@@ -64,6 +64,11 @@ a:hover {
     z-index: 100;
 }
 
+.notification-panel.notification-panel-floating {
+    position: fixed;
+    z-index: 5000;
+}
+
 .notification-empty,
 .notification-item p {
     margin: 0;
@@ -682,6 +687,24 @@ button {
     width: 100%;
 }
 
+.pgn-panel.game-finished-panel > :not(.game-actions):not(.game-chat-toggle):not(.game-chat-panel) {
+    filter: grayscale(0.85);
+    opacity: 0.48;
+}
+
+.pgn-panel.game-finished-panel .game-actions button {
+    background: #363636;
+    border-color: rgba(190, 190, 190, 0.2);
+    color: #8d8d8d;
+    filter: grayscale(1);
+    opacity: 0.55;
+}
+
+.pgn-panel.game-finished-panel .game-actions .analyze-game-button {
+    filter: none;
+    opacity: 1;
+}
+
 .history-controls {
     display: flex;
     flex-wrap: wrap;
@@ -979,10 +1002,12 @@ button {
 }
 
 .board-toolbar {
+    align-items: center;
     display: flex;
     gap: 8px;
     justify-content: flex-end;
     margin-bottom: 8px;
+    width: calc(var(--square-size) * 8 + 6px);
 }
 
 .analysis-mode-button {
@@ -1179,12 +1204,23 @@ button {
 .game-status {
     background-color: #f0d9b5;
     color: #111;
-    display: inline-block;
-    font-size: 20px;
+    display: inline-flex;
+    align-items: center;
+    font-size: 14px;
     font-weight: bold;
-    margin: 0 0 12px;
-    padding: 10px 16px;
+    line-height: 1.1;
+    margin: 0 auto 0 0;
+    min-height: 38px;
+    max-width: min(260px, 100%);
+    overflow: hidden;
+    padding: 0 12px;
     border-radius: 6px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.game-status[hidden] {
+    display: none !important;
 }
 
 .game-clock {

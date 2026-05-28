@@ -132,6 +132,7 @@ const moveList = document.getElementById('move-list');
 const board = document.getElementById('board');
 const turnIndicator = document.getElementById('turn-indicator');
 const gameStatus = document.getElementById('game-status');
+const pgnPanel = document.querySelector('.pgn-panel');
 const pgnBox = document.getElementById('pgn-box');
 const whiteClock = document.getElementById('white-clock');
 const blackClock = document.getElementById('black-clock');
@@ -682,6 +683,7 @@ function updateHistoryControls() {
 function showGameStatus(message) {
     gameStatus.innerText = message;
     gameStatus.hidden = false;
+    updateFinishedPanelState();
 
     if (analyzeGameButton && gameOver) {
         analyzeGameButton.hidden = false;
@@ -691,10 +693,19 @@ function showGameStatus(message) {
 function hideGameStatus() {
     gameStatus.hidden = true;
     gameStatus.innerText = '';
+    updateFinishedPanelState();
 
-    if (analyzeGameButton) {
+    if (analyzeGameButton && !gameOver) {
         analyzeGameButton.hidden = true;
     }
+}
+
+function updateFinishedPanelState() {
+    if (!pgnPanel) {
+        return;
+    }
+
+    pgnPanel.classList.toggle('game-finished-panel', gameOver);
 }
 
 function initialPieceCounts() {
@@ -1469,6 +1480,25 @@ updateCapturedMaterial();
 renderClock();
 renderDrawOffer();
 
+if (
+    typeof GAME_STATUS !== 'undefined' &&
+    GAME_STATUS === 'finished' &&
+    typeof GAME_RESULT !== 'undefined'
+) {
+    gameOver = true;
+
+    if (GAME_RESULT === 'white' || GAME_RESULT === 'black') {
+        showGameStatus(GAME_RESULT === 'white' ? uiText('white_wins', 'VitÃ³ria das brancas') : uiText('black_wins', 'VitÃ³ria das pretas'));
+    } else if (GAME_RESULT === 'draw') {
+        showGameStatus(uiText('game_drawn', 'Partida empatada'));
+    } else {
+        updateFinishedPanelState();
+    }
+
+    renderDrawOffer();
+    updateTurnIndicator();
+}
+
 if (clockIsEnabled()) {
     setInterval(renderClock, 1000);
 }
@@ -1595,6 +1625,8 @@ function applyDrawOfferState(offer) {
 }
 
 function renderDrawOffer() {
+    updateFinishedPanelState();
+
     if (!drawOfferPanel || !drawOfferText) {
         return;
     }
