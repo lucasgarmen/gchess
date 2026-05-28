@@ -8,8 +8,185 @@
 
 {% block content %}
 
+<script>
+    document.documentElement.classList.add('online-game-detail-page-root');
+    document.body.classList.add('online-game-detail-page');
+</script>
+
+<style>
+    @media (min-width: 1101px) {
+        html.online-game-detail-page-root,
+        body.online-game-detail-page {
+            overflow: hidden;
+        }
+
+        .online-game-page-title,
+        .online-game-page-back {
+            display: none;
+        }
+
+        body.online-game-detail-page .online-game-layout {
+            --square-size: clamp(56px, min(calc((100svh - 160px) / 8), calc((100vw - 700px) / 8)), 86px);
+            --board-panel-height: calc((var(--square-size) * 8) + 40px);
+            --captured-panel-height: 62px;
+
+            align-items: center;
+            display: grid;
+            gap: 28px;
+            grid-template-areas:
+                "board info"
+                "board side";
+            grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+            grid-template-rows: auto minmax(0, 1fr);
+            height: 100svh;
+            justify-content: center;
+            margin: 0;
+            max-width: none;
+            overflow: hidden;
+            padding: 16px 0;
+        }
+
+        body.online-game-detail-page .online-game-layout .board-area {
+            align-items: start;
+            grid-area: board;
+            height: calc(100svh - 32px);
+            justify-content: center;
+            min-width: 0;
+            padding-top: 18px;
+        }
+
+        body.online-game-detail-page .online-game-layout .board-wrapper {
+            margin: 0 auto;
+            padding: 12px;
+        }
+
+        body.online-game-detail-page .online-game-layout .game-info-card {
+            align-self: end;
+            display: grid;
+            gap: 8px;
+            grid-area: info;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            margin: 0;
+            max-width: none;
+            padding: 10px 12px;
+            text-align: left;
+            width: 100%;
+        }
+
+        body.online-game-detail-page .online-game-layout .game-info-item {
+            gap: 2px;
+            min-width: 0;
+        }
+
+        body.online-game-detail-page .online-game-layout .game-info-item + .game-info-item {
+            border-left: 1px solid rgba(240, 217, 181, 0.14);
+            border-top: 0;
+            margin-top: 0;
+            padding-left: 10px;
+            padding-top: 0;
+        }
+
+        body.online-game-detail-page .online-game-layout .game-info-item strong,
+        body.online-game-detail-page .online-game-layout .game-info-item span {
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        body.online-game-detail-page .online-game-layout .online-side {
+            align-self: start;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            grid-area: side;
+            height: min(calc(100svh - 154px), 540px);
+            min-height: 0;
+            min-width: 0;
+            width: 100%;
+        }
+
+        body.online-game-detail-page .online-side .pgn-panel {
+            flex: 1 1 auto;
+            height: auto;
+            margin: 0;
+            max-width: none;
+            min-height: 0;
+            overflow: hidden;
+            padding: 12px;
+            width: 100%;
+        }
+
+        body.online-game-detail-page .online-game-layout .pgn-panel h2 {
+            font-size: 16px;
+            margin-bottom: 6px;
+        }
+
+        body.online-game-detail-page .online-game-layout #turn-indicator,
+        body.online-game-detail-page .online-game-layout .game-clock {
+            margin-bottom: 8px;
+        }
+
+        body.online-game-detail-page .online-game-layout .clock-row {
+            padding: 7px 10px;
+        }
+
+        body.online-game-detail-page .online-game-layout .clock-row strong {
+            font-size: 18px;
+        }
+
+        body.online-game-detail-page .online-game-layout .history-controls,
+        body.online-game-detail-page .online-game-layout .game-actions {
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+
+        body.online-game-detail-page .online-game-layout .history-controls button,
+        body.online-game-detail-page .online-game-layout .game-actions button,
+        body.online-game-detail-page .online-game-layout .game-actions .analyze-game-button {
+            font-size: 12px;
+            min-height: 32px;
+            padding: 5px 8px;
+        }
+
+        body.online-game-detail-page .online-game-layout .draw-offer-panel {
+            margin-bottom: 8px;
+            padding: 8px;
+        }
+
+        body.online-game-detail-page .online-game-layout .pgn-box {
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+
+        body.online-game-detail-page .online-game-layout .game-chat-toggle {
+            font-size: 12px;
+            margin-top: 8px;
+            min-height: 32px;
+            padding: 5px 10px;
+        }
+
+        body.online-game-detail-page .online-game-layout .game-chat-panel {
+            bottom: 12px;
+            left: 12px;
+            max-height: min(300px, calc(100% - 24px));
+            padding: 10px;
+            right: 12px;
+        }
+
+        body.online-game-detail-page .online-game-layout .game-chat-messages {
+            min-height: 140px;
+        }
+
+        body.online-game-detail-page .online-game-layout .online-captured-material {
+            flex: 0 0 var(--captured-panel-height);
+            margin-top: 0;
+        }
+    }
+</style>
+
 {% if game.title %}
-<h1>{{ game.title }}</h1>
+<h1 class="online-game-page-title">{{ game.title }}</h1>
 {% endif %}
 
 <main class="game-layout online-game-layout">
@@ -149,7 +326,7 @@
     </div>
 </div>
 
-<a href="{% url 'games_list' %}">{% tr "back_to_games" %}</a>
+<a class="online-game-page-back" href="{% url 'games_list' %}">{% tr "back_to_games" %}</a>
 
 {{ moves|json_script:"saved-moves-data" }}
 {{ clock|json_script:"game-clock-data" }}
