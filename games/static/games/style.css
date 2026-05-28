@@ -729,7 +729,7 @@ button {
     align-items: center;
     background: linear-gradient(180deg, #f7e6c8, var(--accent));
     border-radius: 8px;
-    color: var(--text-dark);
+    color: black;
     display: inline-flex;
     font-weight: 700;
     justify-content: center;
