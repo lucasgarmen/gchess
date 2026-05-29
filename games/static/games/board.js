@@ -20,6 +20,7 @@ let analysisGameState = null;
 let analysisPositions = [];
 let analysisPositionIndex = 0;
 let queuedMove = null;
+let rightClickMarkedSquare = null;
 let multiplayerSyncFailures = 0;
 let gameClock = typeof GAME_CLOCK !== 'undefined' ? GAME_CLOCK : null;
 let drawOffer = typeof DRAW_OFFER !== 'undefined' ? DRAW_OFFER : null;
@@ -795,6 +796,24 @@ function materialValue(pieces) {
     return pieces.reduce((total, piece) => total + (pieceValues[piece.type] || 0), 0);
 }
 
+function groupCapturedPieces(pieces) {
+    const groups = [];
+
+    pieceOrder.forEach(type => {
+        const typePieces = pieces.filter(piece => piece.type === type);
+
+        if (typePieces.length > 0) {
+            groups.push({
+                type: type,
+                color: typePieces[0].color,
+                count: typePieces.length,
+            });
+        }
+    });
+
+    return groups;
+}
+
 function renderCapturedPieces(containerId, pieces) {
     const container = document.getElementById(containerId);
 
@@ -804,10 +823,19 @@ function renderCapturedPieces(containerId, pieces) {
 
     container.replaceChildren();
 
-    pieces.forEach(piece => {
-        const pieceElement = createPieceElement(piece);
-        pieceElement.classList.add('captured-piece');
-        container.appendChild(pieceElement);
+    groupCapturedPieces(pieces).forEach(group => {
+        const groupElement = document.createElement('span');
+        groupElement.classList.add('captured-piece-group');
+        groupElement.dataset.pieceType = group.type;
+        groupElement.dataset.pieceCount = String(group.count);
+
+        for (let index = 0; index < group.count; index++) {
+            const pieceElement = createPieceElement({ type: group.type, color: group.color });
+            pieceElement.classList.add('captured-piece');
+            groupElement.appendChild(pieceElement);
+        }
+
+        container.appendChild(groupElement);
     });
 }
 
@@ -847,6 +875,19 @@ function clearQueuedMove() {
     }
 
     queuedMove = null;
+}
+
+function clearRightClickMarker() {
+    if (rightClickMarkedSquare) {
+        rightClickMarkedSquare.classList.remove('right-click-marked');
+        rightClickMarkedSquare = null;
+    }
+}
+
+function markRightClickSquare(square) {
+    clearRightClickMarker();
+    rightClickMarkedSquare = square;
+    square.classList.add('right-click-marked');
 }
 
 function queueMove(fromSquare, toSquare) {
@@ -1482,7 +1523,27 @@ function setupBoardSquares() {
     squares.forEach(setupSquareInteraction);
 }
 
+function handleBoardContextMenu(event) {
+    const square = event.target.closest('.square');
+
+    if (!square || !board.contains(square)) {
+        return;
+    }
+
+    event.preventDefault();
+    markRightClickSquare(square);
+}
+
 setupBoardSquares();
+
+board.addEventListener('contextmenu', handleBoardContextMenu);
+document.addEventListener('pointerdown', function (event) {
+    clearQueuedMove();
+
+    if (event.button !== 2) {
+        clearRightClickMarker();
+    }
+}, true);
 
 moveSound = buildSound(typeof MOVE_SOUND_URL !== 'undefined' ? MOVE_SOUND_URL : null, 1);
 startSound = buildSound(typeof START_SOUND_URL !== 'undefined' ? START_SOUND_URL : null, 1);
@@ -1675,6 +1736,12 @@ function renderDrawOffer() {
 
     if (!drawOffer || !drawOffer.pending || gameOver) {
         drawOfferPanel.hidden = true;
+        if (acceptDrawButton) {
+            acceptDrawButton.hidden = false;
+        }
+        if (rejectDrawButton) {
+            rejectDrawButton.hidden = false;
+        }
         return;
     }
 
@@ -1685,10 +1752,22 @@ function renderDrawOffer() {
         if (drawOfferActions) {
             drawOfferActions.hidden = false;
         }
+        if (acceptDrawButton) {
+            acceptDrawButton.hidden = false;
+        }
+        if (rejectDrawButton) {
+            rejectDrawButton.hidden = false;
+        }
     } else {
         drawOfferText.innerText = uiText('draw_offer_sent', 'Oferta de empate enviada. Aguardando resposta.');
         if (drawOfferActions) {
-            drawOfferActions.hidden = true;
+            drawOfferActions.hidden = false;
+        }
+        if (acceptDrawButton) {
+            acceptDrawButton.hidden = true;
+        }
+        if (rejectDrawButton) {
+            rejectDrawButton.hidden = false;
         }
     }
 }
@@ -3934,7 +4013,7 @@ if (offerDrawButton) {
         } catch (error) {
             console.error('Erro ao oferecer empate:', error);
         } finally {
-            offerDrawButton.disabled = gameOver;
+            renderDrawOffer();
         }
     });
 }

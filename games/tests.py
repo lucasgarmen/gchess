@@ -291,6 +291,36 @@ class GameAccessTests(TestCase):
         self.assertContains(response, 'id="board"')
         self.assertContains(response, 'games/board.js')
 
+    def test_board_supports_right_click_square_marker(self):
+        source = open("games/static/games/board.js", encoding="utf-8").read()
+        styles = open("games/static/games/style.css", encoding="utf-8").read()
+
+        self.assertIn("let rightClickMarkedSquare = null", source)
+        self.assertIn("function markRightClickSquare(square)", source)
+        self.assertIn("board.addEventListener('contextmenu', handleBoardContextMenu)", source)
+        self.assertIn("document.addEventListener('pointerdown'", source)
+        self.assertIn("clearRightClickMarker()", source)
+        self.assertIn("clearQueuedMove();", source)
+        self.assertIn(".right-click-marked", styles)
+        self.assertIn("rgba(28, 126, 214, 0.48)", styles)
+
+    def test_own_draw_offer_shows_reject_button_for_cancel(self):
+        source = open("games/static/games/board.js", encoding="utf-8").read()
+
+        self.assertIn("drawOfferText.innerText = uiText('draw_offer_sent'", source)
+        self.assertIn("drawOfferActions.hidden = false", source)
+        self.assertIn("acceptDrawButton.hidden = true", source)
+        self.assertIn("rejectDrawButton.hidden = false", source)
+
+    def test_captured_pieces_are_grouped_by_type(self):
+        source = open("games/static/games/board.js", encoding="utf-8").read()
+        styles = open("games/static/games/style.css", encoding="utf-8").read()
+
+        self.assertIn("function groupCapturedPieces(pieces)", source)
+        self.assertIn("groupElement.classList.add('captured-piece-group')", source)
+        self.assertIn("groupElement.dataset.pieceCount = String(group.count)", source)
+        self.assertIn(".captured-piece-group", styles)
+
     def test_finished_game_detail_includes_cancelable_analysis_loading_overlay(self):
         owner = User.objects.create_user(username="analysis-owner", password="pass")
         game = ChessGame.objects.create(
@@ -379,6 +409,39 @@ class GameAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
         self.assertEqual(game.moves.count(), 0)
+
+    def test_player_can_cancel_own_draw_offer(self):
+        white, _black, game = self.create_multiplayer_game()
+
+        self.client.force_login(white)
+        offer_response = self.client.post(reverse("offer_draw", args=[game.id]))
+        cancel_response = self.client.post(
+            reverse("answer_draw_offer", args=[game.id]),
+            data=json.dumps({"accepted": False}),
+            content_type="application/json",
+        )
+
+        game.refresh_from_db()
+        self.assertEqual(offer_response.status_code, 200)
+        self.assertEqual(cancel_response.status_code, 200)
+        self.assertEqual(cancel_response.json()["status"], "cancelled")
+        self.assertFalse(cancel_response.json()["draw_offer"]["pending"])
+        self.assertEqual(game.draw_offer_by_color, "")
+
+    def test_player_cannot_accept_own_draw_offer(self):
+        white, _black, game = self.create_multiplayer_game()
+
+        self.client.force_login(white)
+        self.client.post(reverse("offer_draw", args=[game.id]))
+        response = self.client.post(
+            reverse("answer_draw_offer", args=[game.id]),
+            data=json.dumps({"accepted": True}),
+            content_type="application/json",
+        )
+
+        game.refresh_from_db()
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(game.draw_offer_by_color, "white")
 
     def test_only_player_on_turn_can_move(self):
         white, black, game = self.create_multiplayer_game()

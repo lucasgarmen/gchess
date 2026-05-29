@@ -1008,7 +1008,15 @@ def answer_draw_offer(request, game_id):
         return JsonResponse({'error': 'Nao ha oferta de empate pendente.'}, status=409)
 
     if game.draw_offer_by_color == player_color:
-        return JsonResponse({'error': 'Voce nao pode aceitar sua propria oferta.'}, status=403)
+        if accepted:
+            return JsonResponse({'error': 'Voce nao pode aceitar sua propria oferta.'}, status=403)
+
+        game.draw_offer_by_color = ''
+        game.save(update_fields=['draw_offer_by_color'])
+        return JsonResponse({
+            'status': 'cancelled',
+            'draw_offer': serialize_draw_offer(game, request.user, guest_id),
+        })
 
     if accepted:
         finish_game(game, 'draw')
