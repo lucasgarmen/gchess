@@ -589,6 +589,20 @@ class GameAccessTests(TestCase):
         self.assertIn("socketLog('received'", source)
         self.assertIn("syncMovesFromServer({ source: wasReconnect ? 'websocket-reconnect' : 'websocket-open' })", source)
 
+    def test_bot_requests_have_duplicate_and_rate_limit_guards(self):
+        source = open("games/static/games/board.js", encoding="utf-8").read()
+
+        self.assertIn("let isEngineThinking = false", source)
+        self.assertIn("let isCoachAnalysisLoading = false", source)
+        self.assertIn("COACH_ANALYSIS_DEBOUNCE_MS", source)
+        self.assertIn("scheduleCoachAnalysis()", source)
+        self.assertIn("scheduleEngineMoveRetry(requestKey, elo)", source)
+        self.assertIn("response.status === 429", source)
+        self.assertIn("neutralCoachFallbackComment()", source)
+        self.assertIn("resetBotLoadingState()", source)
+        self.assertIn("engineMoveAbortController.abort()", source)
+        self.assertIn("coachAnalysisAbortController.abort()", source)
+
     def test_analysis_comments_are_short_and_do_not_overpunish_small_loss(self):
         comment = generate_comment(40, "mover el caballo a f3", "desarrollar el alfil a c4", "es")
 

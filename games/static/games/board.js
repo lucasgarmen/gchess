@@ -9,6 +9,8 @@ let dragState = null;
 let suppressNextClick = false;
 let finishedGameSynced = false;
 let computerThinking = false;
+let isEngineThinking = false;
+let isCoachAnalysisLoading = false;
 let coachEnabled = false;
 let trainerChatThinking = false;
 let boardOrientation = playerColor();
@@ -40,6 +42,15 @@ let gameSocketFallbackActive = false;
 let gameSocketReconnectId = null;
 let gameSocketReconnectAttempts = 0;
 let gameSocketEverConnected = false;
+let engineMoveAbortController = null;
+let engineMoveRequestKey = '';
+let engineMoveRetryId = null;
+let engineMoveRetryKey = '';
+let engineMoveRetryCount = 0;
+let coachAnalysisAbortController = null;
+let coachAnalysisDebounceId = null;
+let coachAnalysisRequestKey = '';
+let lastCoachAnalysisCompletedKey = '';
 let gameStateAuthWarningShown = false;
 let gameChatAuthWarningShown = false;
 let gameStateNetworkWarningShown = false;
@@ -50,6 +61,9 @@ const GAME_STATE_POLL_INTERVAL_MS = 1000;
 const GAME_SOCKET_RECONNECT_BASE_MS = 1000;
 const GAME_SOCKET_RECONNECT_MAX_MS = 30000;
 const GAME_SOCKET_RECONNECT_JITTER_MS = 500;
+const ENGINE_MOVE_RETRY_MS = 1500;
+const ENGINE_MOVE_MAX_RETRIES = 1;
+const COACH_ANALYSIS_DEBOUNCE_MS = 300;
 const POLLING_LOG_PREFIX = '[gchess polling]';
 const SOCKET_LOG_PREFIX = '[gchess ws]';
 const COMPUTER_GAME_STATE_KEY = 'gchess-computer-game-state';
@@ -388,6 +402,10 @@ function computerColor() {
     return playerColor() === 'white' ? 'black' : 'white';
 }
 
+function botRequestLocked() {
+    return computerThinking || isEngineThinking;
+}
+
 function canPlayerMoveFrom(square) {
     if (analysisMode) {
         return squareColor(square) !== '';
@@ -396,7 +414,7 @@ function canPlayerMoveFrom(square) {
     if (
         !isViewingLatestPosition() ||
         gameOver ||
-        computerThinking ||
+        botRequestLocked() ||
         squareColor(square) !== currentTurn
     ) {
         return false;
@@ -432,7 +450,7 @@ function updateTurnIndicator() {
         return;
     }
 
-    if (computerThinking) {
+    if (botRequestLocked()) {
         turnIndicator.innerText = 'Computador pensando...';
         return;
     }
@@ -546,7 +564,7 @@ function showNextAnalysisPosition() {
 }
 
 function enterAnalysisMode() {
-    if (computerThinking || promotionPending) {
+    if (botRequestLocked() || promotionPending) {
         return;
     }
 
@@ -652,12 +670,12 @@ function updateHistoryControls() {
 
     const undoComputerButton = document.getElementById('undo-computer-move');
     if (undoComputerButton) {
-        undoComputerButton.disabled = analysisMode || computerThinking || SAVED_MOVES.length === 0;
+        undoComputerButton.disabled = analysisMode || SAVED_MOVES.length === 0;
     }
 
     const resetComputerButton = document.getElementById('reset-computer-game');
     if (resetComputerButton) {
-        resetComputerButton.disabled = analysisMode || computerThinking || SAVED_MOVES.length === 0;
+        resetComputerButton.disabled = analysisMode || SAVED_MOVES.length === 0;
     }
 
     const toggleCoachButton = document.getElementById('toggle-coach');
@@ -669,7 +687,7 @@ function updateHistoryControls() {
 
     const playerColorSelect = document.getElementById('player-color');
     if (playerColorSelect) {
-        playerColorSelect.disabled = analysisMode || computerThinking || SAVED_MOVES.length > 0;
+        playerColorSelect.disabled = analysisMode || botRequestLocked() || SAVED_MOVES.length > 0;
     }
 
     const analysisModeButton = document.getElementById('toggle-analysis-mode');
@@ -1122,7 +1140,7 @@ async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromot
     });
 
     if (isComputerMode() && coachEnabled && movingColor === playerColor()) {
-        requestCoachAnalysis();
+        scheduleCoachAnalysis();
     }
 
     if (
@@ -3397,6 +3415,7 @@ function renderSavedMoveList() {
 
         moveItem.addEventListener('click', function () {
             clearQueuedMove();
+            resetBotLoadingState();
             loadPositionUntil(index + 1);
         });
 
@@ -3415,20 +3434,131 @@ function enableComputerEloSelect() {
     }
 
     if (playerColorSelect) {
-        playerColorSelect.disabled = computerThinking || SAVED_MOVES.length > 0;
+        playerColorSelect.disabled = botRequestLocked() || SAVED_MOVES.length > 0;
     }
 
     updateHistoryControls();
 }
 
+function botMoveRequestKey(moves = SAVED_MOVES) {
+    return moves
+        .map(move => `${move.move_number || ''}:${move.from}${move.to}:${move.promotion || ''}:${move.piece_color || ''}`)
+        .join('|');
+}
+
+function currentUiLanguage() {
+    return typeof UI_LANGUAGE !== 'undefined' ? UI_LANGUAGE : 'pt';
+}
+
+function currentEngineMoveKey(elo) {
+    return `${computerColor()}::${elo}::${botMoveRequestKey()}`;
+}
+
+function coachAnalysisKey(moves = SAVED_MOVES) {
+    return `${playerColor()}::${currentUiLanguage()}::${botMoveRequestKey(moves)}`;
+}
+
+function createAbortControllerIfAvailable() {
+    return typeof AbortController !== 'undefined' ? new AbortController() : null;
+}
+
+function setEngineThinking(value) {
+    isEngineThinking = value;
+    computerThinking = value;
+    updateTurnIndicator();
+    updateHistoryControls();
+}
+
+function cancelEngineMoveRequest() {
+    if (engineMoveAbortController) {
+        engineMoveAbortController.abort();
+        engineMoveAbortController = null;
+    }
+
+    if (engineMoveRetryId) {
+        clearTimeout(engineMoveRetryId);
+        engineMoveRetryId = null;
+    }
+
+    engineMoveRequestKey = '';
+    engineMoveRetryKey = '';
+    engineMoveRetryCount = 0;
+    setEngineThinking(false);
+}
+
+function cancelCoachAnalysisRequest() {
+    if (coachAnalysisDebounceId) {
+        clearTimeout(coachAnalysisDebounceId);
+        coachAnalysisDebounceId = null;
+    }
+
+    if (coachAnalysisAbortController) {
+        coachAnalysisAbortController.abort();
+        coachAnalysisAbortController = null;
+    }
+
+    isCoachAnalysisLoading = false;
+    coachAnalysisRequestKey = '';
+}
+
+function resetBotLoadingState() {
+    if (!isComputerMode()) {
+        return;
+    }
+
+    cancelEngineMoveRequest();
+    cancelCoachAnalysisRequest();
+    lastCoachAnalysisCompletedKey = '';
+}
+
+function neutralCoachFallbackComment() {
+    return uiText(
+        'coach_neutral_fallback',
+        'Jogada registrada. Nao consegui analisar esta posicao agora, mas a partida continua.'
+    );
+}
+
+function shouldRunCoachAnalysisForSnapshot(moves) {
+    if (!isComputerMode() || !coachEnabled || !Array.isArray(moves) || moves.length === 0) {
+        return false;
+    }
+
+    const lastSnapshotMove = moves[moves.length - 1];
+    return lastSnapshotMove && lastSnapshotMove.piece_color === playerColor();
+}
+
+function scheduleCoachAnalysis() {
+    if (!shouldRunCoachAnalysisForSnapshot(SAVED_MOVES)) {
+        return;
+    }
+
+    const movesSnapshot = SAVED_MOVES.map(move => ({ ...move }));
+    const requestKey = coachAnalysisKey(movesSnapshot);
+
+    if (
+        requestKey === lastCoachAnalysisCompletedKey ||
+        requestKey === coachAnalysisRequestKey ||
+        coachAnalysisDebounceId
+    ) {
+        return;
+    }
+
+    coachAnalysisDebounceId = setTimeout(function () {
+        coachAnalysisDebounceId = null;
+        requestCoachAnalysis(requestKey, movesSnapshot);
+    }, COACH_ANALYSIS_DEBOUNCE_MS);
+}
+
 function undoComputerMove() {
-    if (!isComputerMode() || computerThinking || SAVED_MOVES.length === 0) {
+    if (!isComputerMode() || SAVED_MOVES.length === 0) {
         return;
     }
 
     if (!confirm('Tem certeza de que deseja voltar sua última jogada?')) {
         return;
     }
+
+    resetBotLoadingState();
 
     const movesToRemove = SAVED_MOVES.length % 2 === 0 ? 2 : 1;
     SAVED_MOVES.splice(Math.max(0, SAVED_MOVES.length - movesToRemove), movesToRemove);
@@ -3446,13 +3576,15 @@ function undoComputerMove() {
 }
 
 function resetComputerGame() {
-    if (!isComputerMode() || computerThinking || SAVED_MOVES.length === 0) {
+    if (!isComputerMode() || SAVED_MOVES.length === 0) {
         return;
     }
 
     if (!confirm('Tem certeza de que deseja reiniciar a partida?')) {
         return;
     }
+
+    resetBotLoadingState();
 
     SAVED_MOVES.splice(0, SAVED_MOVES.length);
     gameOver = false;
@@ -3664,41 +3796,82 @@ async function askTrainerChat(question) {
     }
 }
 
-async function requestCoachAnalysis() {
+async function requestCoachAnalysis(requestKey = coachAnalysisKey(), movesSnapshot = SAVED_MOVES.map(move => ({ ...move }))) {
+    if (!shouldRunCoachAnalysisForSnapshot(movesSnapshot)) {
+        return;
+    }
+
+    if (requestKey === lastCoachAnalysisCompletedKey || requestKey === coachAnalysisRequestKey) {
+        return;
+    }
+
+    if (isCoachAnalysisLoading) {
+        cancelCoachAnalysisRequest();
+    }
+
+    isCoachAnalysisLoading = true;
+    coachAnalysisRequestKey = requestKey;
+    coachAnalysisAbortController = createAbortControllerIfAvailable();
     setCoachComment(uiText('trainer_analyzing', 'Treinador analisando...'));
 
     try {
-        const response = await fetch('/coach-analysis/', {
+        const fetchOptions = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCSRFToken(),
             },
             body: JSON.stringify({
-                moves: SAVED_MOVES,
+                moves: movesSnapshot,
                 player_color: playerColor(),
-                language: typeof UI_LANGUAGE !== 'undefined' ? UI_LANGUAGE : 'pt',
+                language: currentUiLanguage(),
             }),
-        });
+        };
 
-        const analysis = await response.json();
+        if (coachAnalysisAbortController) {
+            fetchOptions.signal = coachAnalysisAbortController.signal;
+        }
+
+        const response = await fetch('/coach-analysis/', fetchOptions);
+
+        const analysis = await response.json().catch(() => ({}));
+
+        if (coachAnalysisRequestKey !== requestKey) {
+            return;
+        }
 
         if (!response.ok || analysis.error) {
             console.error('Erro do treinador:', analysis.error || response.statusText);
-            setCoachComment(uiText('trainer_error', 'O treinador não conseguiu responder agora.'));
+            if (response.status === 429) {
+                setCoachComment(neutralCoachFallbackComment());
+            } else {
+                setCoachComment(uiText('trainer_error', 'O treinador não conseguiu responder agora.'));
+            }
             return;
         }
 
         setCoachComment(analysis.comment || '');
+        lastCoachAnalysisCompletedKey = requestKey;
     } catch (error) {
+        if (error.name === 'AbortError') {
+            return;
+        }
+
         console.error('Erro ao pedir análise do treinador:', error);
         setCoachComment(uiText('trainer_error', 'O treinador não conseguiu responder agora.'));
+    } finally {
+        if (coachAnalysisRequestKey === requestKey) {
+            isCoachAnalysisLoading = false;
+            coachAnalysisRequestKey = '';
+            coachAnalysisAbortController = null;
+        }
     }
 }
 
 document.getElementById('prev-move').addEventListener('click', function () {
     clearQueuedMove();
     if (historyIndex > 0) {
+        resetBotLoadingState();
         loadPositionUntil(historyIndex - 1);
     }
 });
@@ -3706,12 +3879,14 @@ document.getElementById('prev-move').addEventListener('click', function () {
 document.getElementById('next-move').addEventListener('click', function () {
     clearQueuedMove();
     if (historyIndex < SAVED_MOVES.length) {
+        resetBotLoadingState();
         loadPositionUntil(historyIndex + 1);
     }
 });
 
 document.getElementById('last-move').addEventListener('click', function () {
     clearQueuedMove();
+    resetBotLoadingState();
     if (typeof ANALYZER_MODE !== 'undefined' && ANALYZER_MODE) {
         loadPositionUntil(0);
     } else {
@@ -3899,7 +4074,7 @@ const playerColorSelect = document.getElementById('player-color');
 if (playerColorSelect) {
     playerColorSelect.value = playerColor();
     playerColorSelect.addEventListener('change', function () {
-        if (!isComputerMode() || SAVED_MOVES.length > 0 || computerThinking) {
+        if (!isComputerMode() || SAVED_MOVES.length > 0 || botRequestLocked()) {
             playerColorSelect.value = playerColor();
             return;
         }
@@ -3981,7 +4156,10 @@ if (trainerChatInput) {
     });
 }
 
-document.addEventListener('gchess:before-language-change', saveComputerGameState);
+document.addEventListener('gchess:before-language-change', function () {
+    resetBotLoadingState();
+    saveComputerGameState();
+});
 
 
 function updatePgnBox() {
@@ -4044,22 +4222,73 @@ function choosePromotionPiece(square, color) {
     });
 }
 
-async function askComputerMove() {
-    if (gameOver || currentTurn !== computerColor() || computerThinking) {
+function scheduleEngineMoveRetry(requestKey, elo) {
+    engineMoveRequestKey = '';
+    engineMoveAbortController = null;
+    setEngineThinking(false);
+
+    if (engineMoveRetryCount >= ENGINE_MOVE_MAX_RETRIES) {
+        console.warn('Motor ainda limitado por taxa; a partida foi desbloqueada para desfazer ou tentar novamente depois.');
+        engineMoveRetryKey = '';
         return;
     }
 
-    computerThinking = true;
-    updateTurnIndicator();
-    updateHistoryControls();
+    if (engineMoveRetryId) {
+        clearTimeout(engineMoveRetryId);
+    }
+
+    engineMoveRetryCount += 1;
+    engineMoveRetryKey = requestKey;
+    engineMoveRetryId = setTimeout(function () {
+        engineMoveRetryId = null;
+
+        if (
+            currentEngineMoveKey(elo) !== requestKey ||
+            gameOver ||
+            analysisMode ||
+            !isViewingLatestPosition() ||
+            currentTurn !== computerColor()
+        ) {
+            engineMoveRetryKey = '';
+            engineMoveRetryCount = 0;
+            return;
+        }
+
+        engineMoveRetryKey = '';
+        askComputerMove();
+    }, ENGINE_MOVE_RETRY_MS);
+}
+
+async function askComputerMove() {
+    if (
+        !isComputerMode() ||
+        gameOver ||
+        analysisMode ||
+        promotionPending ||
+        !isViewingLatestPosition() ||
+        currentTurn !== computerColor()
+    ) {
+        return;
+    }
 
     const eloSelect = document.getElementById('computer-elo');
     const elo = eloSelect ? eloSelect.value : 1200;
+    const requestKey = currentEngineMoveKey(elo);
 
-    let move;
+    if (isEngineThinking || engineMoveRequestKey === requestKey) {
+        return;
+    }
+
+    if (engineMoveRetryId && engineMoveRetryKey === requestKey) {
+        return;
+    }
+
+    setEngineThinking(true);
+    engineMoveRequestKey = requestKey;
+    engineMoveAbortController = createAbortControllerIfAvailable();
 
     try {
-        const response = await fetch('/engine-move/', {
+        const fetchOptions = {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -4069,37 +4298,61 @@ async function askComputerMove() {
                 moves: SAVED_MOVES,
                 elo: elo,
             }),
-        });
+        };
 
-        move = await response.json();
+        if (engineMoveAbortController) {
+            fetchOptions.signal = engineMoveAbortController.signal;
+        }
+
+        const response = await fetch('/engine-move/', fetchOptions);
+        const move = await response.json().catch(() => ({}));
+
+        if (engineMoveRequestKey !== requestKey) {
+            return;
+        }
+
+        if (response.status === 429) {
+            console.warn('Motor com muitas solicitações; tentando novamente em instantes.');
+            scheduleEngineMoveRetry(requestKey, elo);
+            return;
+        }
 
         if (!response.ok || move.error) {
             console.error('Erro do computador:', move.error || response.statusText);
-            computerThinking = false;
-            updateTurnIndicator();
-            updateHistoryControls();
             return;
         }
+
+        if (
+            currentEngineMoveKey(elo) !== requestKey ||
+            gameOver ||
+            analysisMode ||
+            !isViewingLatestPosition() ||
+            currentTurn !== computerColor()
+        ) {
+            return;
+        }
+
+        const fromSquare = getSquare(move.from);
+        const toSquare = getSquare(move.to);
+
+        if (!fromSquare || !toSquare) {
+            return;
+        }
+
+        await playMove(fromSquare, toSquare, true, move.promotion || null);
     } catch (error) {
+        if (error.name === 'AbortError') {
+            return;
+        }
+
         console.error('Erro ao pedir jogada do computador:', error);
-        computerThinking = false;
-        updateTurnIndicator();
-        updateHistoryControls();
-        return;
+    } finally {
+        if (engineMoveRequestKey === requestKey) {
+            engineMoveRequestKey = '';
+            engineMoveAbortController = null;
+            engineMoveRetryKey = '';
+            engineMoveRetryCount = 0;
+            setEngineThinking(false);
+        }
     }
-
-    const fromSquare = getSquare(move.from);
-    const toSquare = getSquare(move.to);
-
-    if (!fromSquare || !toSquare) {
-        computerThinking = false;
-        updateTurnIndicator();
-        updateHistoryControls();
-        return;
-    }
-
-    await playMove(fromSquare, toSquare, true, move.promotion || null);
-    computerThinking = false;
-    updateTurnIndicator();
-    updateHistoryControls();
 }
