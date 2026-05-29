@@ -392,6 +392,21 @@ class GameAccessTests(TestCase):
         self.assertIn("version", data)
         self.assertEqual(response.headers["Cache-Control"], "no-store, no-cache, must-revalidate, max-age=0")
 
+    @patch("games.views.broadcast_move_created")
+    def test_http_save_move_broadcasts_to_game_group_after_save(self, broadcast_move_created):
+        white, _black, game = self.create_multiplayer_game()
+
+        response = self.post_move(white, game, "e2", "e4")
+
+        self.assertEqual(response.status_code, 200)
+        broadcast_move_created.assert_called_once()
+        game_id, actor, result, guest_id = broadcast_move_created.call_args.args
+        self.assertEqual(game_id, game.id)
+        self.assertEqual(actor, white)
+        self.assertIsNone(guest_id)
+        self.assertEqual(result["move_id"], game.moves.get().id)
+        self.assertEqual(result["state"]["move_count"], 1)
+
     def test_legacy_moves_endpoint_still_returns_latest_moves(self):
         white, black, game = self.create_multiplayer_game()
         self.assertEqual(self.post_move(white, game, "e2", "e4").status_code, 200)
@@ -475,6 +490,17 @@ class GameAccessTests(TestCase):
         self.assertIn("gchess:position-changed", analyzer)
         self.assertIn("ANALYZER_MODE", source)
         self.assertIn("loadPositionUntil(0)", source)
+
+    def test_board_websocket_reconnects_with_backoff_and_state_sync(self):
+        source = open("games/static/games/board.js", encoding="utf-8").read()
+
+        self.assertIn("GAME_SOCKET_RECONNECT_BASE_MS", source)
+        self.assertIn("GAME_SOCKET_RECONNECT_MAX_MS", source)
+        self.assertIn("nextGameSocketReconnectDelay", source)
+        self.assertIn("socketLog('close'", source)
+        self.assertIn("socketLog('reconnect scheduled'", source)
+        self.assertIn("socketLog('received'", source)
+        self.assertIn("syncMovesFromServer({ source: wasReconnect ? 'websocket-reconnect' : 'websocket-open' })", source)
 
     def test_analysis_comments_are_more_descriptive(self):
         comment = generate_comment(40, "mover el caballo a f3", "desarrollar el alfil a c4", "es")
@@ -691,12 +717,16 @@ class DeployReadinessTests(SimpleTestCase):
 
     def test_render_files_are_configured(self):
         build = open("build.sh", encoding="utf-8").read()
+        dockerfile = open("Dockerfile", encoding="utf-8").read()
         procfile = open("Procfile", encoding="utf-8").read()
         requirements = open("requirements.txt", encoding="utf-8").read()
 
         self.assertIn("apt-get install -y stockfish", build)
         self.assertIn("collectstatic --no-input", build)
         self.assertIn("python manage.py migrate", build)
+        self.assertIn("daphne", dockerfile)
+        self.assertIn("config.asgi:application", dockerfile)
+        self.assertNotIn("gunicorn config.wsgi:application", dockerfile)
         self.assertIn("daphne", procfile)
         self.assertIn("config.asgi:application", procfile)
         self.assertIn("channels", requirements)

@@ -28,6 +28,7 @@ from .gemini_service import generate_gemini_explanation
 from .i18n import current_language, normalize_language, t
 from .models import ChessGame, GameChatMessage, GameChatRead, GameInvitation, Move, UserPresence
 from .prompts import build_trainer_chat_prompt
+from .realtime import broadcast_move_created
 
 PROMOTION_PIECES = {
     'queen': 'q',
@@ -744,15 +745,19 @@ def game_create(request):
 @rate_limit(60, 60, 'save-move')
 def save_move(request, game_id):
     touch_presence(request.user)
+    guest_id = request.session.get('guest_id')
+
     try:
         data = parse_json_body(request)
     except ValueError as exc:
         return JsonResponse({'error': str(exc)}, status=400)
 
     try:
-        result = save_move_for_user(game_id, request.user, data, request.session.get('guest_id'))
+        result = save_move_for_user(game_id, request.user, data, guest_id)
     except GameActionError as exc:
         return JsonResponse(exc.payload, status=exc.status)
+
+    broadcast_move_created(game_id, request.user, result, guest_id)
 
     return JsonResponse(result)
 

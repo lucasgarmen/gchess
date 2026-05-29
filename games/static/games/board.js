@@ -38,6 +38,8 @@ let gameSocket = null;
 let gameSocketConnected = false;
 let gameSocketFallbackActive = false;
 let gameSocketReconnectId = null;
+let gameSocketReconnectAttempts = 0;
+let gameSocketEverConnected = false;
 let gameStateAuthWarningShown = false;
 let gameChatAuthWarningShown = false;
 let gameStateNetworkWarningShown = false;
@@ -45,12 +47,23 @@ let gameChatNetworkWarningShown = false;
 
 const DRAG_PIECE_SCALE = 1.7;
 const GAME_STATE_POLL_INTERVAL_MS = 1000;
-const GAME_SOCKET_RECONNECT_MS = 3000;
+const GAME_SOCKET_RECONNECT_BASE_MS = 1000;
+const GAME_SOCKET_RECONNECT_MAX_MS = 30000;
+const GAME_SOCKET_RECONNECT_JITTER_MS = 500;
 const POLLING_LOG_PREFIX = '[gchess polling]';
+const SOCKET_LOG_PREFIX = '[gchess ws]';
 const COMPUTER_GAME_STATE_KEY = 'gchess-computer-game-state';
 
 function pollingLog(message, details = {}) {
     console.log(POLLING_LOG_PREFIX, message, details);
+}
+
+function socketLog(message, details = {}) {
+    console.log(SOCKET_LOG_PREFIX, message, details);
+}
+
+function socketWarn(message, details = {}) {
+    console.warn(SOCKET_LOG_PREFIX, message, details);
 }
 
 function lastKnownMoveId() {
@@ -3006,7 +3019,7 @@ async function applyGameStateFromServer(data) {
     await playQueuedMoveIfReady();
 }
 
-async function syncMovesFromServer() {
+async function syncMovesFromServer(options = {}) {
     if (
         typeof GAME_ID === 'undefined' ||
         typeof ANALYZER_MODE !== 'undefined' && ANALYZER_MODE ||
@@ -3020,6 +3033,7 @@ async function syncMovesFromServer() {
     gameStateLoading = true;
     pollingLog('request state', {
         gameId: GAME_ID,
+        source: options.source || 'polling',
         moveCount: SAVED_MOVES.length,
         lastMoveId: lastKnownMoveId(),
         currentTurn: currentTurn,
@@ -3174,6 +3188,21 @@ function gameSocketUrl() {
     return `${protocol}//${window.location.host}/ws/games/${GAME_ID}/`;
 }
 
+function nextGameSocketReconnectDelay() {
+    const exponent = Math.max(0, gameSocketReconnectAttempts - 1);
+    const backoff = Math.min(
+        GAME_SOCKET_RECONNECT_BASE_MS * (2 ** exponent),
+        GAME_SOCKET_RECONNECT_MAX_MS
+    );
+    const jitter = Math.floor(Math.random() * GAME_SOCKET_RECONNECT_JITTER_MS);
+
+    return backoff + jitter;
+}
+
+function shouldReconnectGameSocket(event) {
+    return !event || ![4001, 4003].includes(event.code);
+}
+
 function connectGameSocket() {
     if (
         !isMultiplayerMode() ||
@@ -3187,20 +3216,40 @@ function connectGameSocket() {
     }
 
     try {
+        socketLog('open requested', {
+            gameId: GAME_ID,
+            attempt: gameSocketReconnectAttempts + 1,
+        });
         gameSocket = new WebSocket(gameSocketUrl());
     } catch (error) {
-        console.warn('No se pudo crear el WebSocket de la partida:', error);
+        socketWarn('error creating socket', {
+            gameId: GAME_ID,
+            error: error,
+        });
         enableGameSocketFallback();
+        scheduleGameSocketReconnect();
         return;
     }
 
     gameSocket.addEventListener('open', function () {
+        const wasReconnect = gameSocketEverConnected || gameSocketReconnectAttempts > 0 || gameSocketFallbackActive;
+
         gameSocketConnected = true;
+        gameSocketEverConnected = true;
+        gameSocketReconnectAttempts = 0;
         gameSocketFallbackActive = false;
         pauseGameStatePolling();
         pauseGameChatPolling();
-        console.log('[gchess ws] conectado', { gameId: GAME_ID });
-        syncMovesFromServer();
+        socketLog('open', {
+            gameId: GAME_ID,
+            reconnected: wasReconnect,
+        });
+
+        if (wasReconnect) {
+            socketLog('reconnect complete; syncing latest state', { gameId: GAME_ID });
+        }
+
+        syncMovesFromServer({ source: wasReconnect ? 'websocket-reconnect' : 'websocket-open' });
         fetchGameChat();
     });
 
@@ -3208,15 +3257,27 @@ function connectGameSocket() {
         handleGameSocketMessage(event);
     });
 
-    gameSocket.addEventListener('close', function () {
+    gameSocket.addEventListener('close', function (event) {
+        socketLog('close', {
+            gameId: GAME_ID,
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+        });
         gameSocketConnected = false;
         gameSocket = null;
         enableGameSocketFallback();
-        scheduleGameSocketReconnect();
+
+        if (shouldReconnectGameSocket(event)) {
+            scheduleGameSocketReconnect();
+        }
     });
 
     gameSocket.addEventListener('error', function (error) {
-        console.warn('WebSocket de partida con error; usando polling como fallback.', error);
+        socketWarn('error; enabling polling fallback', {
+            gameId: GAME_ID,
+            error: error,
+        });
         enableGameSocketFallback();
     });
 }
@@ -3236,10 +3297,23 @@ function scheduleGameSocketReconnect() {
         return;
     }
 
+    gameSocketReconnectAttempts += 1;
+    const delayMs = nextGameSocketReconnectDelay();
+
+    socketLog('reconnect scheduled', {
+        gameId: GAME_ID,
+        attempt: gameSocketReconnectAttempts,
+        delayMs: delayMs,
+    });
+
     gameSocketReconnectId = setTimeout(function () {
         gameSocketReconnectId = null;
+        socketLog('reconnect attempt', {
+            gameId: GAME_ID,
+            attempt: gameSocketReconnectAttempts,
+        });
         connectGameSocket();
-    }, GAME_SOCKET_RECONNECT_MS);
+    }, delayMs);
 }
 
 function sendGameSocketMessage(message) {
@@ -3247,8 +3321,23 @@ function sendGameSocketMessage(message) {
         return false;
     }
 
-    gameSocket.send(JSON.stringify(message));
-    return true;
+    try {
+        gameSocket.send(JSON.stringify(message));
+        socketLog('sent', {
+            gameId: GAME_ID,
+            type: message.type,
+        });
+        return true;
+    } catch (error) {
+        socketWarn('send failed', {
+            gameId: GAME_ID,
+            type: message.type,
+            error: error,
+        });
+        enableGameSocketFallback();
+        scheduleGameSocketReconnect();
+        return false;
+    }
 }
 
 async function handleGameSocketMessage(event) {
@@ -3257,9 +3346,20 @@ async function handleGameSocketMessage(event) {
     try {
         data = JSON.parse(event.data);
     } catch (error) {
-        console.warn('Mensaje WebSocket inválido:', event.data);
+        socketWarn('received invalid message', {
+            gameId: GAME_ID,
+            data: event.data,
+        });
         return;
     }
+
+    socketLog('received', {
+        gameId: GAME_ID,
+        type: data.type,
+        moveCount: data.state ? data.state.move_count : undefined,
+        lastMoveId: data.state ? data.state.last_move_id : undefined,
+        status: data.status,
+    });
 
     if (data.type === 'connection.ready') {
         return;
@@ -3278,8 +3378,12 @@ async function handleGameSocketMessage(event) {
 
     if (data.type === 'error') {
         pendingMoveSaveCount = Math.max(0, pendingMoveSaveCount - 1);
-        console.warn('Error WebSocket:', data.error || data.status);
-        syncMovesFromServer();
+        socketWarn('server error', {
+            gameId: GAME_ID,
+            status: data.status,
+            error: data.error,
+        });
+        syncMovesFromServer({ source: 'websocket-error' });
     }
 }
 

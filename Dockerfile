@@ -25,4 +25,4 @@ EXPOSE 10000
 CMD command -v "$STOCKFISH_PATH" \
     && python manage.py collectstatic --no-input \
     && python manage.py migrate \
-    && gunicorn config.wsgi:application --bind 0.0.0.0:${PORT}
+    && daphne -b 0.0.0.0 -p ${PORT} config.asgi:application

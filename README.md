@@ -94,6 +94,7 @@ python manage.py test
 - `DJANGO_ALLOWED_HOSTS`: comma-separated hosts, for example `gchess.onrender.com`.
 - `DJANGO_CSRF_TRUSTED_ORIGINS`: comma-separated HTTPS origins, for example `https://gchess.onrender.com`.
 - `DATABASE_URL`: PostgreSQL URL in production. If empty, local SQLite is used.
+- `REDIS_URL`: Redis URL for the Django Channels channel layer in production.
 - `STOCKFISH_PATH`: path to the Stockfish executable.
 - `EMAIL_BACKEND`: optional email backend override. Leave empty to use SMTP when `EMAIL_HOST` is set, or console email when it is not.
 - `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`: SMTP server settings for password recovery emails.
@@ -130,13 +131,13 @@ bash build.sh
 Start command:
 
 ```bash
-gunicorn config.wsgi:application
+daphne -b 0.0.0.0 -p $PORT config.asgi:application
 ```
 
 The included `Procfile` also defines:
 
 ```bash
-web: gunicorn config.wsgi:application
+web: daphne -b 0.0.0.0 -p $PORT config.asgi:application
 ```
 
 Recommended Render environment variables:
@@ -147,6 +148,7 @@ DJANGO_DEBUG=False
 DJANGO_ALLOWED_HOSTS=your-service-name.onrender.com
 DJANGO_CSRF_TRUSTED_ORIGINS=https://your-service-name.onrender.com
 DATABASE_URL=postgres://...
+REDIS_URL=redis://...
 DJANGO_SECURE_SSL_REDIRECT=True
 STOCKFISH_PATH=/usr/games/stockfish
 ```
