@@ -692,6 +692,11 @@ button {
     opacity: 0.48;
 }
 
+.computer-panel.game-finished-panel > :not(.computer-controls) {
+    filter: grayscale(0.85);
+    opacity: 0.48;
+}
+
 .pgn-panel.game-finished-panel .game-actions button {
     background: #363636;
     border-color: rgba(190, 190, 190, 0.2);

@@ -160,6 +160,7 @@ const board = document.getElementById('board');
 const turnIndicator = document.getElementById('turn-indicator');
 const gameStatus = document.getElementById('game-status');
 const pgnPanel = document.querySelector('.pgn-panel');
+const computerCoachPanel = document.getElementById('computer-coach-panel');
 const pgnBox = document.getElementById('pgn-box');
 const whiteClock = document.getElementById('white-clock');
 const blackClock = document.getElementById('black-clock');
@@ -732,11 +733,13 @@ function hideGameStatus() {
 }
 
 function updateFinishedPanelState() {
-    if (!pgnPanel) {
-        return;
+    if (pgnPanel) {
+        pgnPanel.classList.toggle('game-finished-panel', gameOver);
     }
 
-    pgnPanel.classList.toggle('game-finished-panel', gameOver);
+    if (computerCoachPanel && isComputerMode()) {
+        computerCoachPanel.classList.toggle('game-finished-panel', gameOver);
+    }
 }
 
 function initialPieceCounts() {

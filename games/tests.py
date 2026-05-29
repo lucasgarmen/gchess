@@ -589,6 +589,22 @@ class GameAccessTests(TestCase):
         self.assertIn("socketLog('received'", source)
         self.assertIn("syncMovesFromServer({ source: wasReconnect ? 'websocket-reconnect' : 'websocket-open' })", source)
 
+    def test_bot_finished_status_uses_board_toolbar_and_dims_coach_panel(self):
+        home = open("games/templates/games/home.html", encoding="utf-8").read()
+        board_source = open("games/static/games/board.js", encoding="utf-8").read()
+        styles = open("games/static/games/style.css", encoding="utf-8").read()
+
+        toolbar_start = home.index('<div class="board-toolbar">')
+        toolbar_end = home.index('<div id="board" class="board"></div>')
+        pgn_start = home.index('id="computer-pgn-panel"')
+        pgn_end = home.index('<ul id="move-list"', pgn_start)
+
+        self.assertIn('id="game-status"', home[toolbar_start:toolbar_end])
+        self.assertNotIn('id="game-status"', home[pgn_start:pgn_end])
+        self.assertIn("const computerCoachPanel = document.getElementById('computer-coach-panel')", board_source)
+        self.assertIn("computerCoachPanel.classList.toggle('game-finished-panel', gameOver)", board_source)
+        self.assertIn(".computer-panel.game-finished-panel > :not(.computer-controls)", styles)
+
     def test_bot_requests_have_duplicate_and_rate_limit_guards(self):
         source = open("games/static/games/board.js", encoding="utf-8").read()
 
