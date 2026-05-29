@@ -3,12 +3,13 @@ import os
 from unittest.mock import patch
 
 import chess
+import chess.engine
 from django.contrib.auth.models import User
 from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 
 from .models import ChessGame, DailyVisit, GameInvitation, Move
-from .views import build_pgn_from_saved_game, evaluate_board_outcome, generate_comment, read_analyzer_game, read_internal_coordinate_game
+from .views import build_automatic_move_context, build_pgn_from_saved_game, evaluate_board_outcome, generate_comment, read_analyzer_game, read_internal_coordinate_game
 
 
 class AnalyzerPgnParsingTests(SimpleTestCase):
@@ -91,6 +92,92 @@ class DrawOutcomeTests(SimpleTestCase):
             board.push(chess.Move.from_uci(move))
 
         self.assertEqual(evaluate_board_outcome(board)["reason"], "threefold_repetition")
+
+
+def fake_engine_analysis(cp=None, pv=None, mate=None):
+    score = chess.engine.Mate(mate) if mate is not None else chess.engine.Cp(cp or 0)
+    return {
+        "score": chess.engine.PovScore(score, chess.WHITE),
+        "pv": pv or [],
+    }
+
+
+class FakeAnalysisEngine:
+    def __init__(self, responses):
+        self.responses = responses
+
+    def analyse(self, board, _limit):
+        return self.responses.get(board.fen(), fake_engine_analysis(0))
+
+    def quit(self):
+        pass
+
+
+class AutomaticCommentaryTests(SimpleTestCase):
+    def build_context(self, played_uci, best_uci, played_cp, best_cp, before_cp=0, language="en"):
+        board = chess.Board()
+        played_move = chess.Move.from_uci(played_uci)
+        best_move = chess.Move.from_uci(best_uci)
+        played_board = board.copy()
+        played_board.push(played_move)
+        best_board = board.copy()
+        best_board.push(best_move)
+        responses = {
+            board.fen(): fake_engine_analysis(before_cp, [best_move]),
+            played_board.fen(): fake_engine_analysis(played_cp),
+            best_board.fen(): fake_engine_analysis(best_cp),
+        }
+
+        return build_automatic_move_context(
+            FakeAnalysisEngine(responses),
+            board,
+            played_move,
+            move_number=1,
+            language=language,
+        )
+
+    def test_e2e4_best_move_is_not_marked_as_inaccuracy(self):
+        context = self.build_context("e2e4", "e2e4", played_cp=25, best_cp=25)
+
+        self.assertEqual(context["classification"], "best")
+        self.assertEqual(context["centipawn_loss"], 0)
+        self.assertEqual(context["played_move_uci"], context["best_move_uci"])
+        self.assertNotIn("Inaccuracy", context["comment"])
+
+    def test_played_move_equal_to_best_move_never_recommends_same_move(self):
+        context = self.build_context("e2e4", "e2e4", played_cp=-80, best_cp=-80)
+
+        self.assertEqual(context["classification"], "best")
+        self.assertNotIn("Better was", context["comment"])
+
+    def test_small_centipawn_loss_is_not_classified_as_bad(self):
+        context = self.build_context("d2d4", "e2e4", played_cp=10, best_cp=45)
+
+        self.assertIn(context["classification"], {"book", "good", "normal"})
+        self.assertNotIn(context["classification"], {"inaccuracy", "mistake", "blunder"})
+
+    def test_large_centipawn_loss_is_mistake_or_blunder(self):
+        mistake = self.build_context("g2g4", "e2e4", played_cp=-170, best_cp=45)
+        blunder = self.build_context("g2g4", "e2e4", played_cp=-320, best_cp=45)
+
+        self.assertEqual(mistake["classification"], "mistake")
+        self.assertEqual(blunder["classification"], "blunder")
+
+    def test_missing_engine_data_returns_neutral_comment(self):
+        board = chess.Board()
+        move = chess.Move.from_uci("e2e4")
+        after = board.copy()
+        after.push(move)
+        engine = FakeAnalysisEngine({
+            board.fen(): {"pv": [move]},
+            after.fen(): {},
+        })
+
+        context = build_automatic_move_context(engine, board, move, move_number=1, language="en")
+
+        self.assertEqual(context["classification"], "neutral")
+        self.assertIsNone(context["centipawn_loss"])
+        self.assertIn("engine data was incomplete", context["comment"])
 
 
 class InvitationLinkTests(TestCase):
@@ -502,13 +589,13 @@ class GameAccessTests(TestCase):
         self.assertIn("socketLog('received'", source)
         self.assertIn("syncMovesFromServer({ source: wasReconnect ? 'websocket-reconnect' : 'websocket-open' })", source)
 
-    def test_analysis_comments_are_more_descriptive(self):
+    def test_analysis_comments_are_short_and_do_not_overpunish_small_loss(self):
         comment = generate_comment(40, "mover el caballo a f3", "desarrollar el alfil a c4", "es")
 
-        self.assertIn("Imprecision", comment)
+        self.assertIn("Buena jugada", comment)
         self.assertIn("mover el caballo a f3", comment)
-        self.assertIn("desarrollar el alfil a c4", comment)
-        self.assertGreater(len(comment), 120)
+        self.assertNotIn("Imprecision", comment)
+        self.assertLess(len(comment), 140)
 
     def test_missing_stockfish_returns_clear_engine_error(self):
         user = User.objects.create_user(username="stockfish-user", password="pass")
@@ -697,6 +784,61 @@ class StockfishEndpointTests(TestCase):
 
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json()["answer"], "ok")
+
+    def test_bot_game_automatic_comment_uses_stockfish_best_move(self):
+        board = chess.Board()
+        move = chess.Move.from_uci("e2e4")
+        after = board.copy()
+        after.push(move)
+        engine = FakeAnalysisEngine({
+            board.fen(): fake_engine_analysis(20, [move]),
+            after.fen(): fake_engine_analysis(25),
+        })
+
+        with patch("games.views.configured_stockfish_path", return_value=("stockfish", "")), \
+                patch("games.views.open_stockfish_engine", return_value=engine):
+            response = self.client.post(
+                reverse("coach_analysis"),
+                data=json.dumps({
+                    "moves": [{"from": "e2", "to": "e4"}],
+                    "player_color": "white",
+                    "language": "en",
+                }),
+                content_type="application/json",
+            )
+
+        data = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["classification"], "best")
+        self.assertEqual(data["loss"], 0)
+        self.assertNotIn("Inaccuracy", data["comment"])
+        self.assertEqual(data["engine_context"]["played_move_uci"], "e2e4")
+        self.assertEqual(data["engine_context"]["best_move_uci"], "e2e4")
+
+    def test_pgn_analysis_automatic_comments_use_stockfish_classification(self):
+        board = chess.Board()
+        move = chess.Move.from_uci("e2e4")
+        after = board.copy()
+        after.push(move)
+        engine = FakeAnalysisEngine({
+            board.fen(): fake_engine_analysis(20, [move]),
+            after.fen(): fake_engine_analysis(25),
+        })
+
+        with patch("games.views.configured_stockfish_path", return_value=("stockfish", "")), \
+                patch("games.views.open_stockfish_engine", return_value=engine):
+            response = self.client.post(
+                reverse("game_analyzer"),
+                data={"pgn": "1. e4"},
+            )
+
+        analysis = response.context["analysis"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(analysis[0]["classification"], "best")
+        self.assertEqual(analysis[0]["loss"], 0)
+        self.assertNotIn("Inaccuracy", analysis[0]["comment"])
+        self.assertEqual(analysis[0]["engine_context"]["played_move_uci"], "e2e4")
+        self.assertEqual(analysis[0]["engine_context"]["best_move_uci"], "e2e4")
 
 
 class DeployReadinessTests(SimpleTestCase):

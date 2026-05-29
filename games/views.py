@@ -1438,6 +1438,23 @@ import chess.pgn
 import chess.engine
 
 ANALYSIS_LIMIT = chess.engine.Limit(time=0.05)
+BEST_MOVE_LOSS_CP = 15
+GOOD_MOVE_LOSS_CP = 60
+INACCURACY_LOSS_CP = 120
+MISTAKE_LOSS_CP = 260
+NATURAL_OPENING_TOLERANCE_CP = 120
+CENTER_SQUARES = {
+    chess.D4,
+    chess.E4,
+    chess.D5,
+    chess.E5,
+}
+EXTENDED_CENTER_FILES = {
+    2,
+    3,
+    4,
+    5,
+}
 INTERNAL_MOVE_PATTERN = re.compile(
     r"^\s*(?:\d+\.\s*)?([a-h][1-8])\s*->\s*([a-h][1-8])"
     r"(?:\s*(?:=|\()?\s*(queen|rook|bishop|horse|knight|dama|torre|bispo|cavalo|[qrbn])\)?)?\s*$",
@@ -1725,36 +1742,21 @@ def coach_analysis(request):
     engine = None
     try:
         engine = open_stockfish_engine(stockfish_path)
-        before = engine.analyse(board, ANALYSIS_LIMIT)
-        before_score = score_to_cp(before["score"].white())
-        best_move = before.get("pv", [played_move])[0]
-        played_san = board.san(played_move)
-        best_san = board.san(best_move)
-
-        context_board = board.copy()
-        board.push(played_move)
-
-        after = engine.analyse(board, ANALYSIS_LIMIT)
-        after_score = score_to_cp(after["score"].white())
-
-        loss = before_score - after_score if moving_color == "white" else after_score - before_score
-        loss = max(0, loss)
+        comment_context = build_automatic_move_context(
+            engine,
+            board,
+            played_move,
+            move_number=len(moves),
+            language=language,
+        )
 
         return JsonResponse({
-            "comment": coach_comment(
-                loss,
-                context_board,
-                played_move,
-                best_move,
-                played_san,
-                best_san,
-                before_score,
-                after_score,
-                language,
-            ),
-            "loss": loss,
-            "played": played_san,
-            "best": best_san,
+            "comment": comment_context["comment"],
+            "loss": comment_context["centipawn_loss"],
+            "played": comment_context["played_move_san"],
+            "best": comment_context["best_move_san"],
+            "classification": comment_context["classification"],
+            "engine_context": public_automatic_move_context(comment_context),
         })
     except (chess.engine.EngineError, chess.engine.EngineTerminatedError, OSError) as exc:
         logger.exception("Stockfish failed while analyzing a coach move.")
@@ -1769,6 +1771,346 @@ def coach_analysis(request):
 def build_move_from_data(move_data):
     promotion = PROMOTION_PIECES.get(move_data.get("promotion") or "")
     return chess.Move.from_uci(f"{move_data['from']}{move_data['to']}{promotion or ''}")
+
+
+def engine_score_details(analysis):
+    if not analysis or "score" not in analysis:
+        return None
+
+    score = analysis["score"].white()
+
+    return {
+        "cp_white": score_to_cp(score),
+        "mate": score.mate() if score.is_mate() else None,
+    }
+
+
+def first_legal_pv_move(analysis, board, fallback_move):
+    for move in (analysis or {}).get("pv") or []:
+        if move in board.legal_moves:
+            return move
+
+    return fallback_move
+
+
+def score_for_color(score_details, color):
+    if not score_details or score_details.get("cp_white") is None:
+        return None
+
+    return score_details["cp_white"] if color == "white" else -score_details["cp_white"]
+
+
+def game_phase_for_board(board):
+    if len(board.move_stack) < 20:
+        return "opening"
+
+    non_king_material = sum(
+        1
+        for piece in board.piece_map().values()
+        if piece.piece_type != chess.KING
+    )
+
+    if non_king_material <= 10:
+        return "endgame"
+
+    return "middlegame"
+
+
+def is_natural_opening_move(board, move):
+    if game_phase_for_board(board) != "opening":
+        return False
+
+    piece = board.piece_at(move.from_square)
+
+    if piece is None:
+        return False
+
+    from_file = chess.square_file(move.from_square)
+    to_file = chess.square_file(move.to_square)
+    from_rank = chess.square_rank(move.from_square)
+
+    if piece.piece_type == chess.KING and abs(from_file - to_file) == 2:
+        return True
+
+    if piece.piece_type == chess.PAWN:
+        reaches_center = move.to_square in CENTER_SQUARES or to_file in EXTENDED_CENTER_FILES
+        starts_home = (piece.color == chess.WHITE and from_rank == 1) or (piece.color == chess.BLACK and from_rank == 6)
+        return reaches_center and starts_home
+
+    if piece.piece_type in (chess.KNIGHT, chess.BISHOP):
+        home_squares = {
+            chess.B1,
+            chess.G1,
+            chess.C1,
+            chess.F1,
+            chess.B8,
+            chess.G8,
+            chess.C8,
+            chess.F8,
+        }
+        if move.from_square in home_squares:
+            return True
+
+    board_after = board.copy()
+    board_after.push(move)
+    moved_piece = board_after.piece_at(move.to_square)
+
+    return bool(
+        moved_piece and
+        any(square in CENTER_SQUARES for square in board_after.attacks(move.to_square))
+    )
+
+
+def classify_automatic_move(context):
+    loss = context.get("centipawn_loss")
+
+    if loss is None:
+        return "neutral"
+
+    if context.get("played_equals_best") or loss <= BEST_MOVE_LOSS_CP:
+        return "best"
+
+    if context.get("game_phase") == "opening" and context.get("natural_opening_move"):
+        if loss <= GOOD_MOVE_LOSS_CP:
+            return "book"
+        if loss <= NATURAL_OPENING_TOLERANCE_CP:
+            return "normal"
+
+    if loss <= GOOD_MOVE_LOSS_CP:
+        return "good"
+
+    if loss <= INACCURACY_LOSS_CP:
+        return "inaccuracy"
+
+    if loss <= MISTAKE_LOSS_CP:
+        return "mistake"
+
+    return "blunder"
+
+
+def automatic_comment_reason(context, language):
+    classification = context.get("classification")
+    game_phase = context.get("game_phase")
+    natural_opening = context.get("natural_opening_move")
+
+    if language == "es":
+        if classification == "best":
+            return "sigue la primera opción del motor y mantiene la posición sana"
+        if classification == "book":
+            return "es una jugada natural de apertura y la evaluación sigue estable"
+        if classification == "normal":
+            return "es una jugada natural de apertura; la pérdida de evaluación no es grave"
+        if classification == "good":
+            return "mantiene la evaluación cerca de la mejor línea"
+        if classification == "inaccuracy":
+            return "permite que el rival mejore un poco, pero no es un error serio"
+        if classification == "mistake":
+            return "cede demasiada evaluación y deja una posición más difícil"
+        if classification == "blunder":
+            return "pierde mucha evaluación o permite una táctica decisiva"
+        return "los datos del motor no son suficientes para dar una etiqueta confiable"
+
+    if language == "en":
+        if classification == "best":
+            return "this follows the engine's top choice and keeps the position healthy"
+        if classification == "book":
+            return "this is a natural opening move and the evaluation stays stable"
+        if classification == "normal":
+            return "this is a natural opening move; the evaluation loss is not serious"
+        if classification == "good":
+            return "this keeps the evaluation close to the best line"
+        if classification == "inaccuracy":
+            return "this lets the opponent improve a little, but it is not a serious mistake"
+        if classification == "mistake":
+            return "this gives up too much evaluation and leaves a harder position"
+        if classification == "blunder":
+            return "this loses a lot of evaluation or allows a decisive tactic"
+        return "the engine data was incomplete, so there is no reliable mistake label here"
+
+    if classification == "best":
+        return "segue a primeira escolha do motor e mantém a posição saudável"
+    if classification == "book":
+        return "é uma jogada natural de abertura e a avaliação continua estável"
+    if classification == "normal":
+        return "é uma jogada natural de abertura; a perda de avaliação não é séria"
+    if classification == "good":
+        return "mantém a avaliação perto da melhor linha"
+    if classification == "inaccuracy":
+        return "permite que o adversário melhore um pouco, mas não é um erro sério"
+    if classification == "mistake":
+        return "cede avaliação demais e deixa uma posição mais difícil"
+    if classification == "blunder":
+        return "perde muita avaliação ou permite uma tática decisiva"
+
+    if game_phase == "opening" and natural_opening:
+        return "parece uma jogada natural de abertura, mas os dados do motor ficaram incompletos"
+
+    return "os dados do motor ficaram incompletos, então não há um rótulo confiável de erro aqui"
+
+
+def automatic_comment_label(classification, language):
+    labels = {
+        "en": {
+            "best": "Best move",
+            "book": "Book-like move",
+            "normal": "Normal move",
+            "good": "Good move",
+            "inaccuracy": "Inaccuracy",
+            "mistake": "Mistake",
+            "blunder": "Blunder",
+            "neutral": "Move analyzed",
+        },
+        "es": {
+            "best": "Mejor jugada",
+            "book": "Jugada de apertura",
+            "normal": "Jugada normal",
+            "good": "Buena jugada",
+            "inaccuracy": "Imprecisión",
+            "mistake": "Error",
+            "blunder": "Blunder",
+            "neutral": "Jugada analizada",
+        },
+        "pt": {
+            "best": "Melhor jogada",
+            "book": "Jogada de abertura",
+            "normal": "Jogada normal",
+            "good": "Boa jogada",
+            "inaccuracy": "Imprecisão",
+            "mistake": "Erro",
+            "blunder": "Blunder",
+            "neutral": "Jogada analisada",
+        },
+    }
+
+    return labels.get(language, labels["pt"]).get(classification, labels.get(language, labels["pt"])["neutral"])
+
+
+def build_automatic_comment(context, language='pt'):
+    classification = context.get("classification", "neutral")
+    label = automatic_comment_label(classification, language)
+    played_san = context.get("played_move_san") or ""
+    best_san = context.get("best_move_san") or ""
+    reason = automatic_comment_reason(context, language)
+    same_move = context.get("played_equals_best")
+
+    if classification == "neutral":
+        return f"{label}: {reason}."
+
+    comment = f"{label}: {played_san} - {reason}."
+
+    if classification in ("inaccuracy", "mistake", "blunder") and best_san and not same_move:
+        if language == "es":
+            comment += f" Mejor era {best_san}."
+        elif language == "en":
+            comment += f" Better was {best_san}."
+        else:
+            comment += f" Melhor era {best_san}."
+
+    return comment
+
+
+def build_automatic_move_context(engine, board, played_move, move_number=None, language='pt'):
+    moving_piece = board.piece_at(played_move.from_square)
+    played_san = board.san(played_move) if played_move in board.legal_moves else played_move.uci()
+    game_phase = game_phase_for_board(board)
+
+    if moving_piece is None or played_move not in board.legal_moves:
+        context = {
+            "fen_before": board.fen(),
+            "played_move_san": played_san,
+            "played_move_uci": played_move.uci(),
+            "best_move_san": None,
+            "best_move_uci": None,
+            "evaluation_before": None,
+            "evaluation_after_played": None,
+            "evaluation_after_best": None,
+            "centipawn_loss": None,
+            "classification": "neutral",
+            "move_number": move_number,
+            "game_phase": game_phase,
+            "natural_opening_move": False,
+            "played_equals_best": False,
+        }
+        context["comment"] = build_automatic_comment(context, language)
+        return context
+
+    moving_color = "white" if moving_piece.color == chess.WHITE else "black"
+    fen_before = board.fen()
+    natural_opening_move = is_natural_opening_move(board, played_move)
+
+    before = engine.analyse(board, ANALYSIS_LIMIT)
+    before_score = engine_score_details(before)
+    best_move = first_legal_pv_move(before, board, played_move)
+    best_san = board.san(best_move)
+
+    played_board = board.copy()
+    played_board.push(played_move)
+    after_played = engine.analyse(played_board, ANALYSIS_LIMIT)
+    after_played_score = engine_score_details(after_played)
+
+    played_equals_best = played_move == best_move
+
+    if played_equals_best:
+        after_best_score = after_played_score
+    else:
+        best_board = board.copy()
+        best_board.push(best_move)
+        after_best = engine.analyse(best_board, ANALYSIS_LIMIT)
+        after_best_score = engine_score_details(after_best)
+
+    played_score_for_mover = score_for_color(after_played_score, moving_color)
+    best_score_for_mover = score_for_color(after_best_score, moving_color)
+
+    if before_score is None or after_played_score is None or after_best_score is None:
+        loss = None
+    elif played_equals_best:
+        loss = 0
+    elif played_score_for_mover is None or best_score_for_mover is None:
+        loss = None
+    else:
+        loss = max(0, best_score_for_mover - played_score_for_mover)
+
+    context = {
+        "fen_before": fen_before,
+        "played_move_san": played_san,
+        "played_move_uci": played_move.uci(),
+        "best_move_san": best_san,
+        "best_move_uci": best_move.uci(),
+        "evaluation_before": before_score,
+        "evaluation_after_played": after_played_score,
+        "evaluation_after_best": after_best_score,
+        "centipawn_loss": loss,
+        "classification": "neutral",
+        "move_number": move_number,
+        "game_phase": game_phase,
+        "natural_opening_move": natural_opening_move,
+        "played_equals_best": played_equals_best,
+    }
+    context["classification"] = classify_automatic_move(context)
+    context["comment"] = build_automatic_comment(context, language)
+
+    return context
+
+
+def public_automatic_move_context(context):
+    keys = (
+        "fen_before",
+        "played_move_san",
+        "played_move_uci",
+        "best_move_san",
+        "best_move_uci",
+        "evaluation_before",
+        "evaluation_after_played",
+        "evaluation_after_best",
+        "centipawn_loss",
+        "classification",
+        "move_number",
+        "game_phase",
+        "natural_opening_move",
+        "played_equals_best",
+    )
+
+    return {key: context.get(key) for key in keys}
 
 
 def board_from_move_data(moves):
@@ -2419,13 +2761,14 @@ def game_analyzer(request):
                 san_moves = []
 
                 for move in game.mainline_moves():
-                    before = engine.analyse(board, ANALYSIS_LIMIT)
-                    before_score = score_to_cp(before["score"].white())
-
-                    best_move = before.get("pv", [move])[0]
                     san = board.san(move)
-                    move_description = describe_move(board, move)
-                    best_description = describe_move(board, best_move)
+                    comment_context = build_automatic_move_context(
+                        engine,
+                        board,
+                        move,
+                        move_number=move_number,
+                        language=language,
+                    )
 
                     san_moves.append(san)
                     opening_name = detect_opening(san_moves)
@@ -2450,16 +2793,6 @@ def game_analyzer(request):
 
                     board.push(move)
 
-                    after = engine.analyse(board, ANALYSIS_LIMIT)
-                    after_score = score_to_cp(after["score"].white())
-
-                    if piece_color == "white":
-                        loss = before_score - after_score
-                    else:
-                        loss = after_score - before_score
-
-                    loss = max(0, loss)
-
                     moves.append({
                         "move_number": move_number,
                         "from": from_square,
@@ -2472,8 +2805,10 @@ def game_analyzer(request):
                     analysis.append({
                         "move_number": move_number,
                         "san": san,
-                        "comment": generate_comment(loss, move_description, best_description, language),
-                        "loss": loss,
+                        "comment": comment_context["comment"],
+                        "loss": comment_context["centipawn_loss"],
+                        "classification": comment_context["classification"],
+                        "engine_context": public_automatic_move_context(comment_context),
                     })
 
                     move_number += 1
@@ -2499,31 +2834,38 @@ def game_analyzer(request):
     })
 
 def build_descriptive_comment(loss, move_description, best_description, language='pt'):
+    if loss is None:
+        if language == 'es':
+            return "Jugada analizada: los datos del motor no fueron suficientes para etiquetarla con seguridad."
+        if language == 'en':
+            return "Move analyzed: the engine data was incomplete, so there is no reliable mistake label here."
+        return "Jogada analisada: os dados do motor ficaram incompletos, entao nao ha um rotulo confiavel de erro aqui."
+
     if language == 'es':
-        if loss < 30:
-            return f"Buena jugada: {move_description}. La posicion se mantiene estable, asi que el plan general sigue funcionando. Aprovecha para revisar si tus piezas quedaron coordinadas y si el rey esta seguro."
-        if loss < 80:
-            return f"Imprecision: {move_description}. No arruina la posicion, pero habia una continuacion mas limpia: {best_description}. La idea es mejorar coordinacion o reducir pequenas debilidades antes de que se acumulen."
-        if loss < 180:
-            return f"Error: {move_description} empeora la posicion. Conviene comparar con {best_description}, que conserva mejor la actividad y evita ceder tanto control."
-        return f"Jugada critica: {move_description} pierde demasiada fuerza en la posicion. La alternativa {best_description} era mucho mas segura; revisa si la jugada dejo material, rey o casillas importantes vulnerables."
+        if loss <= GOOD_MOVE_LOSS_CP:
+            return f"Buena jugada: {move_description}. La evaluacion se mantiene cerca de la mejor linea."
+        if loss <= INACCURACY_LOSS_CP:
+            return f"Imprecision: {move_description} permite que el rival mejore un poco. Mejor era {best_description}."
+        if loss <= MISTAKE_LOSS_CP:
+            return f"Error: {move_description} cede demasiada evaluacion. Mejor era {best_description}."
+        return f"Blunder: {move_description} pierde mucha evaluacion. Mejor era {best_description}."
 
     if language == 'en':
-        if loss < 30:
-            return f"Good move: {move_description}. The position stays stable, so your overall plan is still working. Check whether your pieces remain coordinated and your king is safe."
-        if loss < 80:
-            return f"Inaccuracy: {move_description}. It does not ruin the position, but {best_description} was cleaner. The point is to improve coordination or remove small weaknesses before they grow."
-        if loss < 180:
-            return f"Mistake: {move_description} worsens the position. Compare it with {best_description}, which keeps more activity and gives up less control."
-        return f"Critical move: {move_description} loses too much strength in the position. {best_description} was much safer; check whether material, king safety, or key squares became vulnerable."
+        if loss <= GOOD_MOVE_LOSS_CP:
+            return f"Good move: {move_description}. The evaluation stays close to the best line."
+        if loss <= INACCURACY_LOSS_CP:
+            return f"Inaccuracy: {move_description} lets the opponent improve a little. Better was {best_description}."
+        if loss <= MISTAKE_LOSS_CP:
+            return f"Mistake: {move_description} gives up too much evaluation. Better was {best_description}."
+        return f"Blunder: {move_description} loses a lot of evaluation. Better was {best_description}."
 
-    if loss < 30:
-        return f"Boa jogada: {move_description}. A posicao continua saudavel, entao o plano geral ainda faz sentido. Vale observar se suas pecas ficaram coordenadas e se o rei segue seguro."
-    if loss < 80:
-        return f"Imprecisao: {move_description}. Nao estraga a posicao, mas havia um caminho mais limpo: {best_description}. A ideia e melhorar a coordenacao ou evitar pequenas fraquezas antes que elas crescam."
-    if loss < 180:
-        return f"Erro: {move_description} piora a posicao. Compare com {best_description}, que mantem mais atividade e entrega menos controle ao adversario."
-    return f"Lance critico: {move_description} perde muita forca na posicao. {best_description} era bem mais seguro; revise se a jogada deixou material, rei ou casas importantes vulneraveis."
+    if loss <= GOOD_MOVE_LOSS_CP:
+        return f"Boa jogada: {move_description}. A avaliacao fica perto da melhor linha."
+    if loss <= INACCURACY_LOSS_CP:
+        return f"Imprecisao: {move_description} permite que o adversario melhore um pouco. Melhor era {best_description}."
+    if loss <= MISTAKE_LOSS_CP:
+        return f"Erro: {move_description} cede avaliacao demais. Melhor era {best_description}."
+    return f"Blunder: {move_description} perde muita avaliacao. Melhor era {best_description}."
 
 
 def generate_comment(loss, move_description, best_description, language='pt'):
