@@ -52,6 +52,7 @@ let coachAnalysisAbortController = null;
 let coachAnalysisDebounceId = null;
 let coachAnalysisRequestKey = '';
 let lastCoachAnalysisCompletedKey = '';
+let coachAnalysisCooldownUntil = 0;
 let gameStateAuthWarningShown = false;
 let gameChatAuthWarningShown = false;
 let gameStateNetworkWarningShown = false;
@@ -63,8 +64,11 @@ const GAME_SOCKET_RECONNECT_BASE_MS = 1000;
 const GAME_SOCKET_RECONNECT_MAX_MS = 30000;
 const GAME_SOCKET_RECONNECT_JITTER_MS = 500;
 const ENGINE_MOVE_RETRY_MS = 1500;
-const ENGINE_MOVE_MAX_RETRIES = 1;
+// 0 keeps retrying while the same computer turn is still pending.
+const ENGINE_MOVE_MAX_RETRIES = 0;
+const ENGINE_MOVE_MAX_RETRY_MS = 65000;
 const COACH_ANALYSIS_DEBOUNCE_MS = 300;
+const COACH_ANALYSIS_COOLDOWN_MS = 15000;
 const POLLING_LOG_PREFIX = '[gchess polling]';
 const SOCKET_LOG_PREFIX = '[gchess ws]';
 const COMPUTER_GAME_STATE_KEY = 'gchess-computer-game-state';
@@ -3532,6 +3536,26 @@ function currentUiLanguage() {
     return typeof UI_LANGUAGE !== 'undefined' ? UI_LANGUAGE : 'pt';
 }
 
+function retryDelayFromResponse(response, fallbackMs) {
+    const retryAfter = response && response.headers ? Number.parseInt(response.headers.get('Retry-After') || '', 10) : NaN;
+
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        return Math.min(ENGINE_MOVE_MAX_RETRY_MS, retryAfter * 1000 + 500);
+    }
+
+    return fallbackMs;
+}
+
+function engineMoveRetryDelay(response) {
+    const attempt = engineMoveRetryCount + 1;
+    const fallbackDelay = Math.min(
+        ENGINE_MOVE_MAX_RETRY_MS,
+        ENGINE_MOVE_RETRY_MS * (2 ** Math.max(0, attempt - 1))
+    );
+
+    return retryDelayFromResponse(response, fallbackDelay);
+}
+
 function currentEngineMoveKey(elo) {
     return `${computerColor()}::${elo}::${botMoveRequestKey()}`;
 }
@@ -3616,6 +3640,12 @@ function scheduleCoachAnalysis() {
 
     const movesSnapshot = SAVED_MOVES.map(move => ({ ...move }));
     const requestKey = coachAnalysisKey(movesSnapshot);
+
+    if (Date.now() < coachAnalysisCooldownUntil) {
+        setCoachComment(neutralCoachFallbackComment());
+        lastCoachAnalysisCompletedKey = requestKey;
+        return;
+    }
 
     if (
         requestKey === lastCoachAnalysisCompletedKey ||
@@ -3925,7 +3955,9 @@ async function requestCoachAnalysis(requestKey = coachAnalysisKey(), movesSnapsh
         if (!response.ok || analysis.error) {
             console.error('Erro do treinador:', analysis.error || response.statusText);
             if (response.status === 429) {
+                coachAnalysisCooldownUntil = Date.now() + retryDelayFromResponse(response, COACH_ANALYSIS_COOLDOWN_MS);
                 setCoachComment(neutralCoachFallbackComment());
+                lastCoachAnalysisCompletedKey = requestKey;
             } else {
                 setCoachComment(uiText('trainer_error', 'O treinador não conseguiu responder agora.'));
             }
@@ -4304,14 +4336,15 @@ function choosePromotionPiece(square, color) {
     });
 }
 
-function scheduleEngineMoveRetry(requestKey, elo) {
+function scheduleEngineMoveRetry(requestKey, elo, delayMs = ENGINE_MOVE_RETRY_MS) {
     engineMoveRequestKey = '';
     engineMoveAbortController = null;
-    setEngineThinking(false);
+    setEngineThinking(true);
 
-    if (engineMoveRetryCount >= ENGINE_MOVE_MAX_RETRIES) {
+    if (ENGINE_MOVE_MAX_RETRIES > 0 && engineMoveRetryCount >= ENGINE_MOVE_MAX_RETRIES) {
         console.warn('Motor ainda limitado por taxa; a partida foi desbloqueada para desfazer ou tentar novamente depois.');
         engineMoveRetryKey = '';
+        setEngineThinking(false);
         return;
     }
 
@@ -4333,12 +4366,14 @@ function scheduleEngineMoveRetry(requestKey, elo) {
         ) {
             engineMoveRetryKey = '';
             engineMoveRetryCount = 0;
+            setEngineThinking(false);
             return;
         }
 
         engineMoveRetryKey = '';
+        setEngineThinking(false);
         askComputerMove();
-    }, ENGINE_MOVE_RETRY_MS);
+    }, delayMs);
 }
 
 async function askComputerMove() {
@@ -4395,7 +4430,7 @@ async function askComputerMove() {
 
         if (response.status === 429) {
             console.warn('Motor com muitas solicitações; tentando novamente em instantes.');
-            scheduleEngineMoveRetry(requestKey, elo);
+            scheduleEngineMoveRetry(requestKey, elo, engineMoveRetryDelay(response));
             return;
         }
 

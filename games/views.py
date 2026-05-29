@@ -8,6 +8,7 @@ from .models import ChessGame
 from .forms import ChessGameForm
 from django.contrib.auth.decorators import login_required
 import asyncio
+import math
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ import random
 import re
 import shutil
 import uuid
+from functools import wraps
 from io import StringIO
 from pathlib import Path
 from django.http import JsonResponse
@@ -47,6 +49,7 @@ MAX_ENGINE_MOVES = 300
 MAX_PGN_BYTES = 80 * 1024
 MAX_TRAINER_QUESTION_CHARS = 500
 MAX_CHAT_MESSAGE_CHARS = 500
+RATE_LIMIT_SESSION_KEY = 'rate_limit_id'
 logger = logging.getLogger(__name__)
 
 
@@ -58,21 +61,81 @@ class GameActionError(Exception):
         self.payload = message if isinstance(message, dict) else {'error': message}
 
 
+def client_ip_for_rate_limit(request):
+    forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip() or 'unknown'
+
+    return request.META.get('REMOTE_ADDR', 'unknown')
+
+
+def rate_limit_identity(request):
+    if request.user.is_authenticated:
+        return f'user:{request.user.id}'
+
+    session = getattr(request, 'session', None)
+
+    if session is not None:
+        guest_id = session.get('guest_id')
+        rate_limit_id = session.get(RATE_LIMIT_SESSION_KEY)
+
+        if guest_id:
+            return f'guest:{guest_id}'
+
+        if rate_limit_id:
+            return f'session:{rate_limit_id}'
+
+    csrf_token = request.COOKIES.get('csrftoken') or request.META.get('HTTP_X_CSRFTOKEN')
+
+    if csrf_token:
+        return f'csrf:{csrf_token}'
+
+    if session is not None:
+        rate_limit_id = uuid.uuid4().hex
+        session[RATE_LIMIT_SESSION_KEY] = rate_limit_id
+        return f'session:{rate_limit_id}'
+
+    return f'ip:{client_ip_for_rate_limit(request)}'
+
+
+def rate_limited_response(limit, reset_at, window_seconds):
+    now = timezone.now().timestamp()
+    retry_after = max(1, math.ceil((reset_at or now + window_seconds) - now))
+    response = JsonResponse({'error': 'Muitas solicitações. Tente novamente em alguns instantes.'}, status=429)
+    response['Retry-After'] = str(retry_after)
+    response['X-RateLimit-Limit'] = str(limit)
+    response['X-RateLimit-Remaining'] = '0'
+    response['X-RateLimit-Reset'] = str(math.ceil(now + retry_after))
+    return response
+
+
 def rate_limit(limit, window_seconds, key_prefix):
     def decorator(view_func):
+        @wraps(view_func)
         def wrapped(request, *args, **kwargs):
-            if request.user.is_authenticated:
-                identity = f'user:{request.user.id}'
-            else:
-                identity = f'ip:{request.META.get("REMOTE_ADDR", "unknown")}'
+            identity = rate_limit_identity(request)
 
             cache_key = f'rl:{key_prefix}:{identity}'
+            reset_key = f'{cache_key}:reset'
+            now = timezone.now().timestamp()
+
+            if cache.add(cache_key, 1, window_seconds):
+                cache.set(reset_key, now + window_seconds, window_seconds)
+                return view_func(request, *args, **kwargs)
+
             current = cache.get(cache_key, 0)
+            reset_at = cache.get(reset_key)
 
             if current >= limit:
-                return JsonResponse({'error': 'Muitas solicitações. Tente novamente em alguns instantes.'}, status=429)
+                return rate_limited_response(limit, reset_at, window_seconds)
 
-            cache.set(cache_key, current + 1, window_seconds)
+            try:
+                cache.incr(cache_key)
+            except ValueError:
+                cache.set(cache_key, 1, window_seconds)
+                cache.set(reset_key, now + window_seconds, window_seconds)
+
             return view_func(request, *args, **kwargs)
 
         return wrapped

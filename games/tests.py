@@ -5,6 +5,7 @@ from unittest.mock import patch
 import chess
 import chess.engine
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import Client, SimpleTestCase, TestCase
 from django.urls import reverse
 
@@ -592,6 +593,62 @@ class GameAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_rate_limit_returns_retry_after_header(self):
+        cache.clear()
+        user = User.objects.create_user(username="engine-rate-limit", password="pass")
+        self.client.force_login(user)
+
+        payload = json.dumps({"moves": [{}] * 301, "elo": 1320})
+
+        try:
+            for _index in range(30):
+                response = self.client.post(
+                    reverse("engine_move"),
+                    data=payload,
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, 400)
+
+            response = self.client.post(
+                reverse("engine_move"),
+                data=payload,
+                content_type="application/json",
+            )
+        finally:
+            cache.clear()
+
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("Retry-After", response.headers)
+        self.assertGreaterEqual(int(response.headers["Retry-After"]), 1)
+
+    def test_anonymous_rate_limit_uses_browser_session_before_proxy_ip(self):
+        cache.clear()
+        payload = json.dumps({"moves": [{}] * 301, "elo": 1320})
+        first_client = Client(REMOTE_ADDR="10.0.0.8", HTTP_HOST="localhost")
+        second_client = Client(REMOTE_ADDR="10.0.0.8", HTTP_HOST="localhost")
+        first_session = first_client.session
+        first_session["rate_limit_id"] = "browser-token-one"
+        first_session.save()
+        second_session = second_client.session
+        second_session["rate_limit_id"] = "browser-token-two"
+        second_session.save()
+
+        def post_bad_engine_move(client):
+            return client.post(
+                reverse("engine_move"),
+                data=payload,
+                content_type="application/json",
+            )
+
+        try:
+            for _index in range(30):
+                self.assertEqual(post_bad_engine_move(first_client).status_code, 400)
+
+            self.assertEqual(post_bad_engine_move(first_client).status_code, 429)
+            self.assertEqual(post_bad_engine_move(second_client).status_code, 400)
+        finally:
+            cache.clear()
+
     def test_invalid_pgn_does_not_break_analyzer(self):
         user = User.objects.create_user(username="player", password="pass")
 
@@ -674,8 +731,10 @@ class GameAccessTests(TestCase):
         self.assertIn("let isEngineThinking = false", source)
         self.assertIn("let isCoachAnalysisLoading = false", source)
         self.assertIn("COACH_ANALYSIS_DEBOUNCE_MS", source)
+        self.assertIn("coachAnalysisCooldownUntil", source)
         self.assertIn("scheduleCoachAnalysis()", source)
-        self.assertIn("scheduleEngineMoveRetry(requestKey, elo)", source)
+        self.assertIn("retryDelayFromResponse(response", source)
+        self.assertIn("scheduleEngineMoveRetry(requestKey, elo, engineMoveRetryDelay(response))", source)
         self.assertIn("response.status === 429", source)
         self.assertIn("neutralCoachFallbackComment()", source)
         self.assertIn("resetBotLoadingState()", source)
