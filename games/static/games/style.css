@@ -3,6 +3,12 @@ html {
     overflow-y: auto;
 }
 
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
 body {
     background-color: #1e1e1e;
     color: white;
@@ -2982,7 +2988,8 @@ select:focus {
     body.mobile-bot-playing .home-computer-layout,
     .online-game-layout,
     .analyzer-game-layout {
-        --mobile-board-size: min(calc(100vw - 32px), calc(100dvh - 84px), 520px);
+        --mobile-board-chrome: 32px;
+        --mobile-board-size: min(calc(100vw - var(--mobile-board-chrome)), calc(100dvh - 84px), 520px);
         --mobile-square-size: calc(var(--mobile-board-size) / 8);
 
         align-items: center;
@@ -3037,12 +3044,23 @@ select:focus {
     .online-game-layout .board-wrapper,
     .analyzer-game-layout .board-wrapper {
         align-items: flex-start;
+        box-sizing: border-box;
+        flex: 0 0 auto;
         gap: 2px;
         justify-content: center;
         margin: 0 auto;
         max-width: 100vw;
         padding: 4px;
-        width: 100%;
+        width: min(100%, calc(var(--mobile-board-size) + var(--mobile-board-chrome)));
+    }
+
+    body.mobile-bot-playing .home-computer-layout .board-wrapper > div:not(.rank-labels),
+    .online-game-layout .board-wrapper > div:not(.rank-labels),
+    .analyzer-game-layout .board-wrapper > div:not(.rank-labels) {
+        flex: 0 0 var(--mobile-board-size);
+        max-width: var(--mobile-board-size);
+        min-width: 0;
+        width: var(--mobile-board-size);
     }
 
     body.mobile-bot-playing .home-computer-layout .board,
@@ -3055,6 +3073,8 @@ select:focus {
         grid-template-rows: repeat(8, var(--mobile-square-size));
         height: var(--mobile-board-size);
         max-width: 100%;
+        min-width: 0;
+        overflow: hidden;
         width: var(--mobile-board-size);
     }
 
@@ -3243,7 +3263,8 @@ select:focus {
     body.mobile-bot-playing .home-computer-layout,
     .online-game-layout,
     .analyzer-game-layout {
-        --mobile-board-size: min(calc(100vw - 24px), calc(100dvh - 76px), 520px);
+        --mobile-board-chrome: 24px;
+        --mobile-board-size: min(calc(100vw - var(--mobile-board-chrome)), calc(100dvh - 76px), 520px);
     }
 
     body.mobile-bot-playing .home-computer-layout .board-wrapper,

@@ -677,6 +677,7 @@ class GameAccessTests(TestCase):
     def test_mobile_home_includes_bot_menu_without_removing_desktop_board(self):
         response = self.client.get(reverse("home"))
 
+        self.assertContains(response, '<meta name="viewport" content="width=device-width, initial-scale=1.0">')
         self.assertContains(response, 'id="mobile-bot-nav-button"')
         self.assertNotContains(response, 'id="mobile-continue-game-button"')
         self.assertContains(response, 'id="mobile-bot-setup"')
