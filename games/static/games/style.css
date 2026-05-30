@@ -2894,14 +2894,25 @@ select:focus {
         border-radius: 8px;
         color: var(--accent);
         display: none;
-        font-size: 26px;
-        font-weight: 800;
+        gap: 4px;
+        font-size: 12px;
+        font-weight: 700;
         height: 44px;
         justify-content: center;
         line-height: 1;
         margin: 0 0 10px;
-        padding: 0;
-        width: 44px;
+        padding: 0 10px;
+        width: auto;
+    }
+
+    .mobile-nav-arrow {
+        font-size: 22px;
+        font-weight: 800;
+        line-height: 1;
+    }
+
+    .mobile-nav-label {
+        line-height: 1;
     }
 
     body.mobile-bot-playing .board-toolbar .mobile-nav-toggle,
@@ -2911,13 +2922,21 @@ select:focus {
     }
 
     body.mobile-nav-open .mobile-nav-toggle {
+        transform: none;
+    }
+
+    body.mobile-nav-open .mobile-nav-arrow {
         transform: rotate(180deg);
     }
 
     .board-toolbar .mobile-nav-toggle {
-        flex: 0 0 32px;
-        margin: 0 auto 0 0;
+        flex: 0 0 auto;
+        height: 32px;
+        margin: 0;
+        min-width: 68px;
         min-height: 32px;
+        padding: 0 8px;
+        width: auto;
     }
 
     body.mobile-bot-playing:not(.mobile-nav-open) nav,
@@ -3134,7 +3153,9 @@ select:focus {
     body.mobile-bot-playing .home-computer-layout .board-toolbar,
     .online-game-layout .board-toolbar,
     .analyzer-game-layout .board-toolbar {
+        flex-wrap: wrap;
         gap: 4px;
+        justify-content: flex-start;
         margin-bottom: 4px;
         width: var(--mobile-board-size);
     }
@@ -3152,6 +3173,17 @@ select:focus {
     .online-game-layout .icon-button,
     .analyzer-game-layout .icon-button {
         width: 32px;
+    }
+
+    body.mobile-bot-playing .home-computer-layout #toggle-analysis-mode,
+    .online-game-layout #toggle-analysis-mode,
+    .analyzer-game-layout #toggle-analysis-mode {
+        margin-left: auto;
+    }
+
+    body.mobile-analyzer-playing .analyzer-game-layout .history-controls #prev-move,
+    body.mobile-analyzer-playing .analyzer-game-layout .history-controls #next-move {
+        display: none;
     }
 
     body.mobile-bot-playing .home-computer-layout .computer-tabs,

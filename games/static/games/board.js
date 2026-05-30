@@ -605,6 +605,40 @@ function showNextAnalysisPosition() {
     showAnalysisPosition(analysisPositionIndex + 1);
 }
 
+function isMobileAnalyzerHistoryToolbar() {
+    return isMobileLayout() &&
+        typeof ANALYZER_MODE !== 'undefined' &&
+        ANALYZER_MODE &&
+        document.body.classList.contains('mobile-analyzer-playing') &&
+        !analysisMode;
+}
+
+function clickHistoryControl(controlId) {
+    const control = document.getElementById(controlId);
+
+    if (control && !control.disabled) {
+        control.click();
+    }
+}
+
+function showPreviousToolbarPosition() {
+    if (isMobileAnalyzerHistoryToolbar()) {
+        clickHistoryControl('prev-move');
+        return;
+    }
+
+    showPreviousAnalysisPosition();
+}
+
+function showNextToolbarPosition() {
+    if (isMobileAnalyzerHistoryToolbar()) {
+        clickHistoryControl('next-move');
+        return;
+    }
+
+    showNextAnalysisPosition();
+}
+
 function enterAnalysisMode() {
     if (botRequestLocked() || promotionPending) {
         return;
@@ -741,15 +775,20 @@ function updateHistoryControls() {
     }
 
     const analysisPrevButton = document.getElementById('analysis-prev');
+    const useMobileAnalyzerHistoryToolbar = isMobileAnalyzerHistoryToolbar();
     if (analysisPrevButton) {
-        analysisPrevButton.hidden = !analysisMode;
-        analysisPrevButton.disabled = analysisPositionIndex === 0;
+        analysisPrevButton.hidden = !analysisMode && !useMobileAnalyzerHistoryToolbar;
+        analysisPrevButton.disabled = useMobileAnalyzerHistoryToolbar
+            ? historyIndex === 0
+            : analysisPositionIndex === 0;
     }
 
     const analysisNextButton = document.getElementById('analysis-next');
     if (analysisNextButton) {
-        analysisNextButton.hidden = !analysisMode;
-        analysisNextButton.disabled = analysisPositionIndex >= analysisPositions.length - 1;
+        analysisNextButton.hidden = !analysisMode && !useMobileAnalyzerHistoryToolbar;
+        analysisNextButton.disabled = useMobileAnalyzerHistoryToolbar
+            ? historyIndex >= SAVED_MOVES.length
+            : analysisPositionIndex >= analysisPositions.length - 1;
     }
 }
 
@@ -4313,12 +4352,12 @@ if (analysisModeButton) {
 
 const analysisPrevButton = document.getElementById('analysis-prev');
 if (analysisPrevButton) {
-    analysisPrevButton.addEventListener('click', showPreviousAnalysisPosition);
+    analysisPrevButton.addEventListener('click', showPreviousToolbarPosition);
 }
 
 const analysisNextButton = document.getElementById('analysis-next');
 if (analysisNextButton) {
-    analysisNextButton.addEventListener('click', showNextAnalysisPosition);
+    analysisNextButton.addEventListener('click', showNextToolbarPosition);
 }
 
 const playerColorSelect = document.getElementById('player-color');

@@ -12,12 +12,15 @@
     <link rel="icon" href="{% static 'images/favicon.png' %}" type="image/png">
     <link rel="shortcut icon" href="{% static 'images/favicon.png' %}" type="image/png">
     <link rel="apple-touch-icon" href="{% static 'images/favicon.png' %}">
-    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=45">
+    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=46">
 </head>
 
 <body>
 
-    <button id="mobile-nav-toggle" class="mobile-nav-toggle" type="button" aria-label="Menu" aria-expanded="false">⌄</button>
+    <button id="mobile-nav-toggle" class="mobile-nav-toggle" type="button" aria-label="{% tr "menu" %}" aria-expanded="false">
+        <span class="mobile-nav-arrow" aria-hidden="true">⌄</span>
+        <span class="mobile-nav-label">{% tr "menu" %}</span>
+    </button>
 
     <nav id="site-nav">
     <span class="nav-brand" aria-label="GChess">
