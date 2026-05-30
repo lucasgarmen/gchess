@@ -3184,6 +3184,34 @@ select:focus {
         gap: 10px;
     }
 
+    body.mobile-bot-playing .home-computer-layout #computer-coach-panel #coach-comment {
+        order: 1;
+    }
+
+    body.mobile-bot-playing .home-computer-layout #computer-coach-panel .trainer-chat {
+        order: 2;
+    }
+
+    body.mobile-bot-playing .home-computer-layout #computer-coach-panel .computer-controls {
+        order: 3;
+    }
+
+    body.mobile-bot-playing .home-computer-layout #computer-coach-panel label[for="computer-elo"] {
+        order: 4;
+    }
+
+    body.mobile-bot-playing .home-computer-layout #computer-coach-panel #computer-elo {
+        order: 5;
+    }
+
+    body.mobile-bot-playing .home-computer-layout #computer-coach-panel label[for="player-color"] {
+        order: 6;
+    }
+
+    body.mobile-bot-playing .home-computer-layout #computer-coach-panel #player-color {
+        order: 7;
+    }
+
     body.mobile-bot-playing .home-computer-layout .computer-panel label,
     body.mobile-bot-playing .home-computer-layout .computer-panel select,
     .analyzer-game-layout .computer-panel label {
