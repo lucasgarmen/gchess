@@ -19,9 +19,36 @@
 </div>
 {% endblock %}
 
+{% block nav_mobile_extra %}
+<button id="mobile-bot-nav-button" class="mobile-nav-action" type="button">{% tr "play_bot" %}</button>
+{% endblock %}
+
 {% block content %}
 
-<main class="game-layout computer-game-layout">
+<section id="mobile-home-menu" class="mobile-home-menu">
+    <div id="mobile-bot-setup" class="mobile-bot-setup" hidden>
+        <label for="mobile-computer-elo">{% tr "bot_elo" %}</label>
+        <select id="mobile-computer-elo">
+            <option value="500">ELO 500</option>
+            <option value="800">ELO 800</option>
+            <option value="1000">ELO 1000</option>
+            <option value="1320" selected>ELO 1320</option>
+            <option value="1600">ELO 1600</option>
+            <option value="2000">ELO 2000</option>
+            <option value="2500">ELO 2500</option>
+        </select>
+
+        <label for="mobile-player-color">{% tr "play_as" %}</label>
+        <select id="mobile-player-color">
+            <option value="white" selected>{% tr "white" %}</option>
+            <option value="black">{% tr "black" %}</option>
+        </select>
+
+        <button id="mobile-start-bot-game" type="button">{% tr "start_game" %}</button>
+    </div>
+</section>
+
+<main id="home-computer-game" class="game-layout computer-game-layout home-computer-layout">
     <section class="board-area">
         <div class="board-wrapper">
             <div class="rank-labels">
@@ -137,7 +164,7 @@
 </script>
 
 <script src="{% static 'games/analysis_loading.js' %}?v=2"></script>
-<script src="{% static 'games/board.js' %}?v=76"></script>
+<script src="{% static 'games/board.js' %}?v=79"></script>
 <script>
     window.GChessAnalysisLoading.bindForm('analyze-game-form', { navigate: true });
 </script>

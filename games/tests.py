@@ -674,6 +674,27 @@ class GameAccessTests(TestCase):
         self.assertContains(response, 'games/analysis_loading.js')
         self.assertContains(response, "GChessAnalysisLoading.bindForm('analyze-game-form', { navigate: true })")
 
+    def test_mobile_home_includes_bot_menu_without_removing_desktop_board(self):
+        response = self.client.get(reverse("home"))
+
+        self.assertContains(response, 'id="mobile-bot-nav-button"')
+        self.assertNotContains(response, 'id="mobile-continue-game-button"')
+        self.assertContains(response, 'id="mobile-bot-setup"')
+        self.assertContains(response, 'id="mobile-start-bot-game"')
+        self.assertContains(response, 'id="home-computer-game"')
+        self.assertContains(response, 'class="game-layout computer-game-layout home-computer-layout"')
+        self.assertContains(response, 'games/board.js')
+
+    def test_online_game_uses_mobile_nav_toggle(self):
+        white, _black, game = self.create_multiplayer_game()
+
+        self.client.force_login(white)
+        response = self.client.get(reverse("game_detail", args=[game.id]))
+
+        self.assertContains(response, 'id="mobile-nav-toggle"')
+        self.assertContains(response, 'online-game-detail-page')
+        self.assertNotContains(response, 'mobile-online-back-button')
+
     def test_analyzer_page_uses_computer_coach_chat_structure(self):
         template = open("games/templates/games/game_analyzer.html", encoding="utf-8").read()
 

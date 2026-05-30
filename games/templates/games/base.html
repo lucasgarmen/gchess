@@ -11,12 +11,14 @@
     <link rel="icon" href="{% static 'images/favicon.png' %}" type="image/png">
     <link rel="shortcut icon" href="{% static 'images/favicon.png' %}" type="image/png">
     <link rel="apple-touch-icon" href="{% static 'images/favicon.png' %}">
-    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=38">
+    <link rel="stylesheet" href="{% static 'games/style.css' %}?v=43">
 </head>
 
 <body>
 
-    <nav>
+    <button id="mobile-nav-toggle" class="mobile-nav-toggle" type="button" aria-label="Menu" aria-expanded="false">⌄</button>
+
+    <nav id="site-nav">
     <span class="nav-brand" aria-label="GChess">
         <img src="{% static 'games/gchess-logo.png' %}" alt="GChess">
     </span>
@@ -59,6 +61,9 @@
         <a href="{% url 'login' %}">{% tr "nav_login" %}</a>
         <a href="{% url 'register' %}">{% tr "nav_register" %}</a>
     {% endif %}
+
+    {% block nav_mobile_extra %}
+    {% endblock %}
     </nav>
 
     <hr>
@@ -73,6 +78,14 @@
             languageSelect.addEventListener('change', function () {
                 document.dispatchEvent(new CustomEvent('gchess:before-language-change'));
                 languageSelect.form.submit();
+            });
+        }
+
+        const mobileNavToggle = document.getElementById('mobile-nav-toggle');
+        if (mobileNavToggle) {
+            mobileNavToggle.addEventListener('click', function () {
+                const isOpen = document.body.classList.toggle('mobile-nav-open');
+                mobileNavToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
             });
         }
     </script>

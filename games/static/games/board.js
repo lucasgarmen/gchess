@@ -102,6 +102,42 @@ function isHomeComputerGame() {
     return isComputerMode() && typeof ANALYZER_MODE === 'undefined';
 }
 
+function isMobileLayout() {
+    return typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(max-width: 900px)').matches;
+}
+
+function closeMobileNav() {
+    document.body.classList.remove('mobile-nav-open');
+
+    const mobileNavToggle = document.getElementById('mobile-nav-toggle');
+    if (mobileNavToggle) {
+        mobileNavToggle.setAttribute('aria-expanded', 'false');
+    }
+}
+
+function shouldMountMobileNavToggle() {
+    return isMobileLayout() && (
+        document.body.classList.contains('mobile-bot-playing') ||
+        document.body.classList.contains('online-game-detail-page') ||
+        document.body.classList.contains('mobile-analyzer-playing')
+    );
+}
+
+function mountMobileNavToggleInBoardToolbar() {
+    const mobileNavToggle = document.getElementById('mobile-nav-toggle');
+    const boardToolbar = document.querySelector('.board-toolbar');
+
+    if (!mobileNavToggle || !boardToolbar || !shouldMountMobileNavToggle()) {
+        return;
+    }
+
+    if (mobileNavToggle.parentElement !== boardToolbar) {
+        boardToolbar.insertBefore(mobileNavToggle, boardToolbar.firstChild);
+    }
+}
+
 //Funcçao para redireccionar usuario que nao está logueado
 function shouldStopPollingForAuth(response) {
     return response.redirected ||
@@ -1169,6 +1205,7 @@ async function playMove(fromSquare, toSquare, shouldAnimate = true, forcedPromot
     SAVED_MOVES.push(playedMove);
     historyIndex = SAVED_MOVES.length;
     moveNumber = SAVED_MOVES.length + 1;
+    saveComputerGameState();
 
     clearSelection();
     switchTurn();
@@ -1578,6 +1615,7 @@ loadPositionUntil(SAVED_MOVES.length);
 updateCapturedMaterial();
 renderClock();
 renderDrawOffer();
+initMobileGameNavigation();
 
 if (
     typeof GAME_STATUS !== 'undefined' &&
@@ -3864,6 +3902,105 @@ function restoreComputerGameState() {
     coachEnabled = Boolean(state.coachEnabled);
     boardOrientation = state.boardOrientation || playerColor();
     restoreTrainerChatLog(state.trainerMessages);
+}
+
+function mobileHomeElements() {
+    return {
+        botButton: document.getElementById('mobile-bot-nav-button'),
+        setupPanel: document.getElementById('mobile-bot-setup'),
+        startButton: document.getElementById('mobile-start-bot-game'),
+        mobileElo: document.getElementById('mobile-computer-elo'),
+        mobileColor: document.getElementById('mobile-player-color'),
+        desktopElo: document.getElementById('computer-elo'),
+        desktopColor: document.getElementById('player-color'),
+        gameLayout: document.getElementById('home-computer-game'),
+    };
+}
+
+function showMobileBotSetup() {
+    const { setupPanel, mobileElo, mobileColor, desktopElo, desktopColor } = mobileHomeElements();
+
+    if (!setupPanel) {
+        return;
+    }
+
+    if (mobileElo && desktopElo) {
+        mobileElo.value = desktopElo.value;
+    }
+
+    if (mobileColor && desktopColor) {
+        mobileColor.value = playerColor();
+    }
+
+    setupPanel.hidden = false;
+}
+
+function syncMobileBotOptions() {
+    const { mobileElo, mobileColor, desktopElo, desktopColor } = mobileHomeElements();
+
+    if (desktopElo && mobileElo) {
+        desktopElo.value = mobileElo.value;
+    }
+
+    if (desktopColor && mobileColor && desktopColor.value !== mobileColor.value) {
+        desktopColor.value = mobileColor.value;
+        desktopColor.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+}
+
+function showMobileBotGame() {
+    if (!isHomeComputerGame()) {
+        return;
+    }
+
+    const { setupPanel, gameLayout } = mobileHomeElements();
+
+    document.body.classList.add('mobile-bot-playing');
+    closeMobileNav();
+
+    if (gameLayout) {
+        gameLayout.classList.add('mobile-game-layout');
+    }
+
+    if (setupPanel) {
+        setupPanel.hidden = true;
+    }
+
+    mountMobileNavToggleInBoardToolbar();
+    updateBoardOrientation();
+    updateTurnIndicator();
+    updateHistoryControls();
+
+    if (currentTurn === computerColor()) {
+        askComputerMove();
+    }
+}
+
+function initMobileGameNavigation() {
+    const {
+        botButton,
+        setupPanel,
+        startButton,
+    } = mobileHomeElements();
+
+    if (botButton) {
+        botButton.addEventListener('click', function () {
+            showMobileBotSetup();
+        });
+    }
+
+    if (startButton) {
+        startButton.addEventListener('click', function () {
+            syncMobileBotOptions();
+            showMobileBotGame();
+        });
+    }
+
+    if (setupPanel && !isMobileLayout()) {
+        setupPanel.hidden = true;
+    }
+
+    mountMobileNavToggleInBoardToolbar();
 }
 
 async function askTrainerChat(question) {
